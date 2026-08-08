@@ -1,0 +1,42 @@
+export interface Course {
+  id: string;
+  title: string;
+  category: '국비지원' | '자격증' | '실무·기초' | '코딩·AI' | '학생·특강';
+  summary: string;
+  description: string;
+  target: string; // 대상 (예: 취업준비생, 재직자, 시니어, 학생)
+  duration: string; // 기간 (예: 2개월, 40시간)
+  schedule: string; // 시간대 (예: 월~금 10:00 - 12:00 / 야간반 19:00 - 21:00)
+  nationalSupport: boolean; // 국비지원 가능 여부
+  subsidyRate: string; // 지원율 (예: 최대 100% 지원)
+  tuition: number; // 일반 수강료 (원)
+  selfPayEstimate: string; // 예상 자부담금 (예: 0원 ~ 50,000원)
+  certificationTags: string[]; // 관련 자격증
+  curriculum: string[]; // 주차별/단계별 교육내용
+  featured?: boolean;
+}
+
+export interface Notice {
+  id: string;
+  title: string;
+  date: string;
+  category: '모집안내' | '시험일정' | '학원소개' | '국비지원';
+  content: string;
+  important?: boolean;
+}
+
+export interface ConsultationForm {
+  name: string;
+  phone: string;
+  courseInterest: string;
+  preferredTime: '상관없음' | '오전반' | '오후반' | '야간반' | '주말반';
+  hasNaeilCard: '유' | '무' | '발급예정/잘모름';
+  userCategory: '취업준비생' | '재직자' | '대학생/학생' | '주부/시니어' | '기타';
+  message: string;
+}
+
+export interface FAQItem {
+  question: string;
+  answer: string;
+  category: string;
+}
