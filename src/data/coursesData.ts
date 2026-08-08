@@ -233,7 +233,7 @@ export const FAQ_DATA: FAQItem[] = [
   {
     category: '수강관련',
     question: '컴퓨터를 전혀 모르는 독수리 타자 초보자도 수강 가능한가요?',
-    answer: '네, 당연히 가능합니다! 저희 중앙정보처리학원은 1969년부터 홍천 지역 주민분들의 컴퓨터 눈높이 교육을 담당해 왔습니다. 1인 1대 최신 PC 환경에서 원장님 및 전문 강사진이 1:1 맞춤형으로 친절하게 지도해 드리므로 걱정 없이 방문해 주세요.'
+    answer: '네, 당연히 가능합니다! 저희 중앙정보처리학원은 1999년부터 홍천 지역 주민분들의 컴퓨터 눈높이 교육을 담당해 왔습니다. 1인 1대 최신 PC 환경에서 원장님 및 전문 강사진이 1:1 맞춤형으로 친절하게 지도해 드리므로 걱정 없이 방문해 주세요.'
   },
   {
     category: '자격증',
@@ -250,8 +250,8 @@ export const FAQ_DATA: FAQItem[] = [
 export const ACADEMY_INFO = {
   name: '홍천 중앙정보처리학원',
   englishName: 'Jungang Information Processing Computer Institute',
-  foundedYear: 1969,
-  slogan: '50년 전통의 홍천 대표 IT·컴퓨터 전문 교육기관',
+  foundedYear: 1999,
+  slogan: '25년 전통의 홍천 대표 IT·컴퓨터 전문 교육기관',
   director: '홍천 중앙정보처리학원 원장',
   address: '강원도 홍천군 홍천읍 신장대로 48, 2층',
   phone: '033-433-1926~7',
@@ -262,7 +262,7 @@ export const ACADEMY_INFO = {
   domain: 'http://jahrd.com/',
   busInfo: '홍천시외버스터미널 도보 5분 / 중앙시장 입구 버스정류장 하차',
   features: [
-    { title: '1969년 설립 전통', desc: '50년 이상 축적된 깊은 교육 노하우와 지역 사회 신뢰' },
+    { title: '1999년 설립 전통', desc: '25년 이상 축적된 깊은 교육 노하우와 지역 사회 신뢰' },
     { title: '국민내일배움카드 지정', desc: '고용노동부 인정 국비지원 지정 훈련기관 (최대 100% 지원)' },
     { title: '1인 1대 최신 PC 환경', desc: '시험장과 동일한 최고 사양 컴퓨터 및 인체공학 좌석' },
     { title: '1:1 밀착 소수정예', desc: '개인별 학습 속도에 맞춘 꼼꼼한 실무 중심 맞춤형 지도' },

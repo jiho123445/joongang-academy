@@ -26,12 +26,12 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              1969년 설립 이래 강원도 홍천 지역 주민과 구직자분들의 컴퓨터 활용능력, IT 국가기술자격증 취득 및 
+              1999년 설립 이래 강원도 홍천 지역 주민과 구직자분들의 컴퓨터 활용능력, IT 국가기술자격증 취득 및 
               취업 지원을 위해 최고 수준의 실습 환경과 1:1 친절 교육을 제공하고 있습니다.
             </p>
 
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-              <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-slate-300">SINCE 1969</span>
+              <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-slate-300">SINCE 1999</span>
               <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-slate-300">jahrd.com</span>
             </div>
           </div>
@@ -106,7 +106,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
 
         {/* Bottom Copyright */}
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
-          <p>© 1969-{new Date().getFullYear()} 홍천 중앙정보처리학원 (jahrd.com). All Rights Reserved.</p>
+          <p>© 1999-{new Date().getFullYear()} 홍천 중앙정보처리학원 (jahrd.com). All Rights Reserved.</p>
           <p>개인정보 처리방침 | 이용약관 | 고용노동부 지정 훈련기관</p>
         </div>
 

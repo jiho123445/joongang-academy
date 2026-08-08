@@ -42,7 +42,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
             {/* Badge */}
             <div className="inline-block px-4 py-1.5 bg-blue-100/80 backdrop-blur-sm text-blue-700 rounded-full text-xs sm:text-sm font-extrabold tracking-wide uppercase border border-blue-200/60 shadow-sm">
               <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-pulse mr-2"></span>
-              Professional IT Education · SINCE 1969
+              Professional IT Education · SINCE 1999
             </div>
 
             {/* Main Headline */}
@@ -55,7 +55,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
             {/* Paragraph Description */}
             <p className="text-slate-600 text-base sm:text-lg max-w-2xl leading-relaxed">
-              <strong>홍천 중앙정보처리학원</strong>은 50년 전통의 노하우로 초보자부터 취업준비생, 직장인, 어르신까지 
+              <strong>홍천 중앙정보처리학원</strong>은 25년 전통의 노하우로 초보자부터 취업준비생, 직장인, 어르신까지 
               1인 1대 최신 PC 환경에서 1:1 맞춤형으로 친절하게 교육합니다.
             </p>
 

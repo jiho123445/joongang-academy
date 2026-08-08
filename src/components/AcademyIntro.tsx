@@ -10,13 +10,13 @@ export const AcademyIntro: React.FC = () => {
         {/* Section Header */}
         <div className="text-center max-w-3xl mx-auto mb-12">
           <span className="inline-block px-4 py-1.5 rounded-full bg-blue-100/80 backdrop-blur-sm text-blue-700 font-extrabold text-xs mb-3 border border-blue-200/60 shadow-sm">
-            ABOUT JAHRD · SINCE 1969
+            ABOUT JAHRD · SINCE 1999
           </span>
           <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
             홍천 중앙정보처리학원을 소개합니다
           </h2>
           <p className="text-slate-600 text-sm sm:text-base mt-2">
-            50년 역사를 이어온 강원도 홍천 지역 대표 컴퓨터 및 정보처리 교육의 명문입니다.
+            25년 역사를 이어온 강원도 홍천 지역 대표 컴퓨터 및 정보처리 교육의 명문입니다.
           </p>
         </div>
 
@@ -36,7 +36,7 @@ export const AcademyIntro: React.FC = () => {
               </h3>
 
               <p className="text-slate-200 text-sm sm:text-base leading-relaxed">
-                홍천 중앙정보처리학원은 <strong>1969년 설립</strong>된 이래, 빠르게 변화하는 IT 기술 환경 속에서 
+                홍천 중앙정보처리학원은 <strong>1999년 설립</strong>된 이래, 빠르게 변화하는 IT 기술 환경 속에서 
                 지역 주민, 청소년, 구직자, 직장인, 그리고 어르신들까지 모두가 컴퓨터와 IT 자격증을 쉽고 즐겁게 
                 배우실 수 있도록 정성을 다해왔습니다.
               </p>
@@ -54,11 +54,11 @@ export const AcademyIntro: React.FC = () => {
 
             <div className="lg:col-span-4 bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20 space-y-4 text-center shadow-lg">
               <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white mx-auto flex items-center justify-center font-black text-2xl shadow-lg shadow-blue-500/30">
-                50+
+                25+
               </div>
-              <h4 className="text-lg font-bold text-white">50년 전통의 깊은 신뢰</h4>
+              <h4 className="text-lg font-bold text-white">25년 전통의 깊은 신뢰</h4>
               <p className="text-xs text-slate-200 leading-relaxed">
-                1969년부터 지금까지 홍천군민 수만 명의 IT 정보화 교육 및 국가기술자격증 배출을 책임져 왔습니다.
+                1999년부터 지금까지 홍천군민 수만 명의 IT 정보화 교육 및 국가기술자격증 배출을 책임져 왔습니다.
               </p>
               <div className="pt-2 border-t border-white/10 text-xs font-semibold text-emerald-300">
                 고용노동부 우수 국비훈련기관

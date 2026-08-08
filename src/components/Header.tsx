@@ -25,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
   }, []);
 
   const navItems = [
+    { id: 'home', label: '홈' },
     { id: 'courses', label: '교육과정' },
     { id: 'national-support', label: '국비지원(내일배움)' },
     { id: 'calculator', label: '수강료 계산기' },
@@ -74,34 +75,34 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
       </div>
 
       {/* Main Navigation Bar */}
-      <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 transition-all ${isScrolled ? 'py-2.5' : 'py-3.5'}`}>
-        <div className="flex items-center justify-between">
+      <div className={`max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 transition-all ${isScrolled ? 'py-2' : 'py-3'}`}>
+        <div className="flex items-center justify-between gap-2 lg:gap-4">
           {/* Logo */}
           <div
             onClick={() => handleNavClick('hero')}
-            className="flex items-center gap-3 cursor-pointer group"
+            className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group shrink-0"
             id="header-logo"
           >
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl shadow-lg shadow-blue-200 group-hover:bg-blue-700 transition-colors">
-              <GraduationCap className="w-6 h-6 text-white" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-200 group-hover:bg-blue-700 transition-colors shrink-0">
+              <GraduationCap className="w-5 h-5 text-white" />
             </div>
-            <div>
+            <div className="shrink-0">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg sm:text-xl text-slate-800 tracking-tight leading-none group-hover:text-blue-600 transition-colors">
+                <span className="font-extrabold text-base sm:text-lg lg:text-xl text-slate-800 tracking-tight leading-none group-hover:text-blue-600 transition-colors whitespace-nowrap">
                   홍천 중앙정보처리학원
                 </span>
-                <span className="bg-blue-100/80 backdrop-blur-sm text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200">
-                  SINCE 1969
+                <span className="bg-blue-100/80 backdrop-blur-sm text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200 whitespace-nowrap">
+                  SINCE 1999
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium">
+              <p className="hidden xl:block text-[11px] text-slate-500 mt-0.5 font-medium whitespace-nowrap">
                 고용노동부 국비지원 지정 IT·컴퓨터 교육기관
               </p>
             </div>
           </div>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-1 xl:gap-2">
+          {/* Desktop Navigation Links - Single Line Strict */}
+          <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 shrink-0">
             {navItems.map((item) => {
               const isActive = activeSection === item.id;
               return (
@@ -109,10 +110,10 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
                   id={`nav-${item.id}`}
-                  className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
                     isActive
                       ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-200'
-                      : 'text-slate-600 hover:text-blue-600 hover:bg-white/60'
+                      : 'text-slate-700 hover:text-blue-600 hover:bg-white/70'
                   }`}
                 >
                   {item.label}
@@ -122,13 +123,13 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
           </nav>
 
           {/* Header Action Buttons */}
-          <div className="hidden sm:flex items-center gap-2.5">
+          <div className="hidden sm:flex items-center gap-2 shrink-0">
             <button
               onClick={() => handleNavClick('inquiry')}
               id="header-inquiry-btn"
-              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-200 hover:shadow-blue-300 transition-all"
+              className="inline-flex items-center gap-1.5 px-4 xl:px-5 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs xl:text-sm shadow-lg shadow-blue-200 hover:shadow-blue-300 transition-all whitespace-nowrap"
             >
-              <FileText className="w-4 h-4" />
+              <FileText className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
               <span>수강 문의</span>
             </button>
           </div>
