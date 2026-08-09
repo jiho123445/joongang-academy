@@ -20,7 +20,7 @@ export const LocationSection: React.FC = () => {
             오시는 길 & 위치 안내
           </h2>
           <p className="text-slate-600 text-sm sm:text-base mt-2">
-            홍천 중앙시장 및 버스터미널 근처로 접근성이 뛰어난 곳에 위치해 있습니다.
+            홍천여자고등학교 인근 및 버스터미널 근처로 접근성이 뛰어난 곳에 위치해 있습니다.
           </p>
         </div>
 
@@ -40,7 +40,7 @@ export const LocationSection: React.FC = () => {
                     {ACADEMY_INFO.address}
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    (홍천 중앙시장 입구 부근 / 2층)
+                    (홍천여자고등학교 인근 중앙약국 맞은편)
                   </p>
                 </div>
               </div>
@@ -136,7 +136,7 @@ export const LocationSection: React.FC = () => {
                 강원도 홍천군 홍천읍 신장대로 48 (2층)
               </h4>
               <p className="text-xs text-slate-600 max-w-sm mt-1 font-medium">
-                홍천 중앙시장 입구 맞은편 건물 2층 위치
+                홍천여자고등학교 인근 중앙약국 맞은편 건물 2층 위치
               </p>
 
               {/* Map Action Buttons overlay */}

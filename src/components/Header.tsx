@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Phone, MapPin, Menu, X, GraduationCap, ChevronRight, Award, Bot, FileText, Calendar } from 'lucide-react';
+import { Phone, MapPin, Menu, X, GraduationCap, ChevronRight, Award, Bot, FileText, Calendar, FileSpreadsheet, ShieldCheck } from 'lucide-react';
 import { ACADEMY_INFO } from '../data/coursesData';
 
 interface HeaderProps {
   activeSection: string;
   onNavigate: (sectionId: string) => void;
   onOpenAiModal: () => void;
+  onOpenAdminModal?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpenAiModal }) => {
+export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpenAiModal, onOpenAdminModal }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -28,7 +29,6 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
     { id: 'home', label: '홈' },
     { id: 'courses', label: '교육과정' },
     { id: 'national-support', label: '국비지원(내일배움)' },
-    { id: 'calculator', label: '수강료 계산기' },
     { id: 'intro', label: '학원소개' },
     { id: 'notices', label: '공지·시험일정' },
     { id: 'inquiry', label: '온라인 수강문의' },
@@ -124,6 +124,16 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
 
           {/* Header Action Buttons */}
           <div className="hidden sm:flex items-center gap-2 shrink-0">
+            {onOpenAdminModal && (
+              <button
+                onClick={onOpenAdminModal}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-emerald-400 font-black text-xs border border-slate-700 shadow-md transition-all whitespace-nowrap cursor-pointer"
+                title="원장님/관리자 모드 (수강신청, 팝업공지, 공지사항, 실시간 인기강좌 관리)"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>관리자 모드</span>
+              </button>
+            )}
             <button
               onClick={() => handleNavClick('inquiry')}
               id="header-inquiry-btn"
@@ -205,6 +215,19 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
               AI 수강 도우미
             </button>
           </div>
+
+          {onOpenAdminModal && (
+            <button
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                onOpenAdminModal();
+              }}
+              className="w-full mt-2 py-2.5 bg-slate-900 text-emerald-400 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 shadow"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>원장님/관리자 모드</span>
+            </button>
+          )}
         </div>
       )}
     </header>

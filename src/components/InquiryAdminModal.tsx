@@ -1,0 +1,1864 @@
+import React, { useState, useEffect } from 'react';
+import { InquiryRecord, Notice } from '../types';
+import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
+import * as XLSX from 'xlsx';
+import {
+  X,
+  Download,
+  Search,
+  Filter,
+  RefreshCw,
+  CheckCircle2,
+  Clock,
+  UserCheck,
+  Trash2,
+  Edit3,
+  FileSpreadsheet,
+  Lock,
+  Phone,
+  ShieldCheck,
+  AlertCircle,
+  Sparkles,
+  Megaphone,
+  Save,
+  Eye,
+  Calendar,
+  ToggleLeft,
+  ToggleRight,
+  Check,
+  Plus,
+  RotateCcw,
+  BookOpen,
+  Bell,
+  FileText,
+  AlertTriangle,
+  Flame,
+  Award,
+} from 'lucide-react';
+
+export interface PopularCourseAdminItem {
+  id: string;
+  badge: string;
+  badgeColor?: string;
+  timeSlot: string;
+  title: string;
+  description: string;
+}
+
+interface InquiryAdminModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onNoticeUpdated?: () => void;
+}
+
+export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
+  isOpen,
+  onClose,
+  onNoticeUpdated,
+}) => {
+  const [inquiries, setInquiries] = useState<InquiryRecord[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('전체');
+  
+  // Simple admin auth check
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [pinInput, setPinInput] = useState<string>('');
+  const [pinError, setPinError] = useState<boolean>(false);
+
+  // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'
+  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'>('inquiries');
+
+  // Board Notices (공지사항 & 자격시험 일정) State
+  const [boardNotices, setBoardNotices] = useState<Notice[]>([]);
+  const [isNoticeFormOpen, setIsNoticeFormOpen] = useState<boolean>(false);
+  const [editingBoardNotice, setEditingBoardNotice] = useState<Notice | null>(null);
+  const [noticeFormTitle, setNoticeFormTitle] = useState<string>('');
+  const [noticeFormCategory, setNoticeFormCategory] = useState<Notice['category']>('모집안내');
+  const [noticeFormDate, setNoticeFormDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [noticeFormImportant, setNoticeFormImportant] = useState<boolean>(false);
+  const [noticeFormContent, setNoticeFormContent] = useState<string>('');
+  const [boardNoticeSuccessMsg, setBoardNoticeSuccessMsg] = useState<string>('');
+
+  // Real-time Popular Courses State (실시간 인기 수강 강좌)
+  const [popularCourses, setPopularCourses] = useState<PopularCourseAdminItem[]>([]);
+  const [isPopFormOpen, setIsPopFormOpen] = useState<boolean>(false);
+  const [editingPopCourse, setEditingPopCourse] = useState<PopularCourseAdminItem | null>(null);
+  const [popFormTitle, setPopFormTitle] = useState<string>('');
+  const [popFormBadge, setPopFormBadge] = useState<string>('모집중 · 국비지원');
+  const [popFormBadgeColor, setPopFormBadgeColor] = useState<string>('blue');
+  const [popFormTimeSlot, setPopFormTimeSlot] = useState<string>('09:30 - 12:30');
+  const [popFormDescription, setPopFormDescription] = useState<string>('');
+  const [popSuccessMsg, setPopSuccessMsg] = useState<string>('');
+
+  // Edit memo inline state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingMemo, setEditingMemo] = useState<string>('');
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Default 4 schedules
+  const defaultSchedules: ScheduleItem[] = [
+    { courseName: '컴퓨터활용능력 (1급 / 2급)', startDate: '8월 18일 개강', timeSlot: '오전 10:00 / 야간 19:00' },
+    { courseName: '전산세무회계 (전산회계1급/세무2급)', startDate: '8월 25일 개강', timeSlot: '오후 14:00 / 야간 19:00' },
+    { courseName: '시니어 어르신 왕초보 컴퓨터&스마트폰', startDate: '8월 20일 개강', timeSlot: '오후 13:30 ~ 15:00' },
+    { courseName: '정보처리기능사 / GTQ 포토샵 자격증', startDate: '9월 01일 개강', timeSlot: '오후 15:30 / 야간 19:00' },
+  ];
+
+  // Popup Notice State
+  const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig>({
+    enabled: true,
+    badgeText: '2026년 하반기 신규 개강 안내',
+    title: '홍천 중앙정보처리학원 8~9월 수강생 모집',
+    subtitle: '국비지원 최대 100% 지원 & 1:1 맞춤 실습 교육',
+    content: '컴퓨터활용능력(1급/2급), 전산세무회계, 정보처리기능사/기사, GTQ/ITQ 자격증, 시니어 어르신 기초반 수강생을 모집합니다! 지금 신청하시고 국민내일배움카드 혜택을 받으세요.',
+    dateText: '개강일: 2026년 8월 ~ 9월 수시 개강 (오전/오후/야간반 운영)',
+    schedules: defaultSchedules,
+    actionText: '지금 온라인 수강신청하기',
+  });
+  const [savingNotice, setSavingNotice] = useState<boolean>(false);
+  const [noticeSuccessMsg, setNoticeSuccessMsg] = useState<string>('');
+
+  const fetchInquiries = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/inquiries');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setInquiries(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch inquiries:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchNoticeConfig = async () => {
+    try {
+      const res = await fetch('/api/popup-notice');
+      const data = await res.json();
+      if (data.success && data.data) {
+        const cfg = data.data;
+        if (!cfg.schedules || !Array.isArray(cfg.schedules) || cfg.schedules.length === 0) {
+          cfg.schedules = defaultSchedules;
+        }
+        setNoticeConfig(cfg);
+      }
+    } catch (err) {
+      console.error('Failed to fetch notice config:', err);
+    }
+  };
+
+  // Schedule editing helpers
+  const handleScheduleChange = (index: number, field: keyof ScheduleItem, value: string) => {
+    const currentSchedules = noticeConfig.schedules && noticeConfig.schedules.length > 0
+      ? [...noticeConfig.schedules]
+      : [...defaultSchedules];
+
+    currentSchedules[index] = {
+      ...currentSchedules[index],
+      [field]: value,
+    };
+
+    setNoticeConfig((prev) => ({
+      ...prev,
+      schedules: currentSchedules,
+    }));
+  };
+
+  const handleAddScheduleRow = () => {
+    const currentSchedules = noticeConfig.schedules && noticeConfig.schedules.length > 0
+      ? [...noticeConfig.schedules]
+      : [...defaultSchedules];
+
+    currentSchedules.push({ courseName: '', startDate: '', timeSlot: '' });
+
+    setNoticeConfig((prev) => ({
+      ...prev,
+      schedules: currentSchedules,
+    }));
+  };
+
+  const handleRemoveScheduleRow = (index: number) => {
+    const currentSchedules = (noticeConfig.schedules || []).filter((_, i) => i !== index);
+    setNoticeConfig((prev) => ({
+      ...prev,
+      schedules: currentSchedules,
+    }));
+  };
+
+  const handleResetSchedules = () => {
+    setNoticeConfig((prev) => ({
+      ...prev,
+      schedules: defaultSchedules,
+    }));
+  };
+
+  const fetchBoardNotices = async () => {
+    try {
+      const res = await fetch('/api/notices');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setBoardNotices(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch board notices:', err);
+    }
+  };
+
+  const handleOpenCreateNoticeForm = () => {
+    setEditingBoardNotice(null);
+    setNoticeFormTitle('');
+    setNoticeFormCategory('모집안내');
+    setNoticeFormDate(new Date().toISOString().slice(0, 10));
+    setNoticeFormImportant(false);
+    setNoticeFormContent('');
+    setIsNoticeFormOpen(true);
+  };
+
+  const handleOpenEditNoticeForm = (notice: Notice) => {
+    setEditingBoardNotice(notice);
+    setNoticeFormTitle(notice.title);
+    setNoticeFormCategory(notice.category);
+    setNoticeFormDate(notice.date || new Date().toISOString().slice(0, 10));
+    setNoticeFormImportant(Boolean(notice.important));
+    setNoticeFormContent(notice.content);
+    setIsNoticeFormOpen(true);
+  };
+
+  const handleSaveBoardNoticeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!noticeFormTitle.trim() || !noticeFormContent.trim()) {
+      alert('제목과 내용을 입력해 주세요.');
+      return;
+    }
+
+    try {
+      const url = editingBoardNotice ? `/api/notices/${editingBoardNotice.id}` : '/api/notices';
+      const method = editingBoardNotice ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: noticeFormTitle,
+          category: noticeFormCategory,
+          date: noticeFormDate,
+          important: noticeFormImportant,
+          content: noticeFormContent,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setIsNoticeFormOpen(false);
+        fetchBoardNotices();
+        window.dispatchEvent(new Event('board_notices_updated'));
+        setBoardNoticeSuccessMsg(editingBoardNotice ? '공지사항이 수정되었습니다.' : '새 공지사항이 등록되었습니다.');
+        setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
+      } else {
+        alert(data.error || '저장 중 오류가 발생했습니다.');
+      }
+    } catch (err) {
+      alert('공지 저장 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleDeleteBoardNoticeItem = async (id: string, title: string) => {
+    if (!window.confirm(`[${title}] 공지사항을 정말 삭제하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(`/api/notices/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        fetchBoardNotices();
+        window.dispatchEvent(new Event('board_notices_updated'));
+        setBoardNoticeSuccessMsg('공지사항이 삭제되었습니다.');
+        setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
+      } else {
+        alert(data.error || '삭제 실패');
+      }
+    } catch (err) {
+      alert('삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  const fetchPopularCoursesAdmin = async () => {
+    try {
+      const res = await fetch('/api/popular-courses');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setPopularCourses(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch popular courses:', err);
+    }
+  };
+
+  const handleOpenCreatePopForm = () => {
+    setEditingPopCourse(null);
+    setPopFormTitle('');
+    setPopFormBadge('모집중 · 국비지원');
+    setPopFormBadgeColor('blue');
+    setPopFormTimeSlot('09:30 - 12:30');
+    setPopFormDescription('');
+    setIsPopFormOpen(true);
+  };
+
+  const handleOpenEditPopForm = (item: PopularCourseAdminItem) => {
+    setEditingPopCourse(item);
+    setPopFormTitle(item.title);
+    setPopFormBadge(item.badge);
+    setPopFormBadgeColor(item.badgeColor || 'blue');
+    setPopFormTimeSlot(item.timeSlot);
+    setPopFormDescription(item.description || '');
+    setIsPopFormOpen(true);
+  };
+
+  const handleSavePopCourseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!popFormTitle.trim()) {
+      alert('강좌명을 입력해 주세요.');
+      return;
+    }
+
+    try {
+      const url = editingPopCourse ? `/api/popular-courses/${editingPopCourse.id}` : '/api/popular-courses';
+      const method = editingPopCourse ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: popFormTitle,
+          badge: popFormBadge,
+          badgeColor: popFormBadgeColor,
+          timeSlot: popFormTimeSlot,
+          description: popFormDescription,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setIsPopFormOpen(false);
+        fetchPopularCoursesAdmin();
+        window.dispatchEvent(new Event('popular_courses_updated'));
+        setPopSuccessMsg(editingPopCourse ? '실시간 인기 강좌가 수정되었습니다.' : '새 인기 강좌가 등록되었습니다.');
+        setTimeout(() => setPopSuccessMsg(''), 4000);
+      } else {
+        alert(data.error || '저장 중 오류가 발생했습니다.');
+      }
+    } catch (err) {
+      alert('저장 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleDeletePopCourseItem = async (id: string, title: string) => {
+    if (!window.confirm(`[${title}] 인기 강좌를 정말 삭제하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(`/api/popular-courses/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        fetchPopularCoursesAdmin();
+        window.dispatchEvent(new Event('popular_courses_updated'));
+        setPopSuccessMsg('인기 강좌가 삭제되었습니다.');
+        setTimeout(() => setPopSuccessMsg(''), 4000);
+      } else {
+        alert(data.error || '삭제 실패');
+      }
+    } catch (err) {
+      alert('삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsAuthenticated(false);
+      setPinInput('');
+      setPinError(false);
+      setSelectedIds([]);
+      setActiveTab('inquiries');
+      fetchInquiries();
+      fetchNoticeConfig();
+      fetchBoardNotices();
+      fetchPopularCoursesAdmin();
+    }
+  }, [isOpen]);
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinInput.trim() === '4001') {
+      setIsAuthenticated(true);
+      setPinError(false);
+    } else {
+      setPinError(true);
+    }
+  };
+
+  const handleSaveNotice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingNotice(true);
+    setNoticeSuccessMsg('');
+    try {
+      const res = await fetch('/api/popup-notice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(noticeConfig),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNoticeSuccessMsg('개강 공지 팝업 설정이 실시간으로 홈페이지에 반영되었습니다!');
+        if (onNoticeUpdated) onNoticeUpdated();
+        setTimeout(() => setNoticeSuccessMsg(''), 4000);
+      } else {
+        alert(data.error || '공지 저장 실패');
+      }
+    } catch (err) {
+      alert('공지 설정 저장 중 오류가 발생했습니다.');
+    } finally {
+      setSavingNotice(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  // Selection handlers
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllFiltered = (filteredList: InquiryRecord[]) => {
+    const allFilteredIds = filteredList.map((item) => item.id);
+    const isAllSelected = allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.includes(id));
+
+    if (isAllSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !allFilteredIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...allFilteredIds])));
+    }
+  };
+
+  // Batch Delete Handler
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`선택한 ${selectedIds.length}건의 신청 내역을 정말 삭제하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch('/api/inquiries/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInquiries((prev) => prev.filter((item) => !selectedIds.includes(item.id)));
+        setSelectedIds([]);
+      } else {
+        alert(data.error || '삭제 작업 실패');
+      }
+    } catch (err) {
+      alert('삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  // Clear All Handler
+  const handleClearAll = async () => {
+    if (inquiries.length === 0) return;
+    if (!window.confirm('🚨 전체 신청 내역을 삭제하시겠습니까?\n이 작업은 복구할 수 없습니다.')) return;
+
+    try {
+      const res = await fetch('/api/inquiries/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clearAll: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInquiries([]);
+        setSelectedIds([]);
+      } else {
+        alert(data.error || '삭제 작업 실패');
+      }
+    } catch (err) {
+      alert('전체 삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  // Status Change Handler
+  const handleStatusChange = async (id: string, newStatus: InquiryRecord['status']) => {
+    try {
+      const res = await fetch(`/api/inquiries/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInquiries((prev) =>
+          prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
+        );
+      }
+    } catch (err) {
+      alert('상태 변경에 실패했습니다.');
+    }
+  };
+
+  // Save Admin Notes Handler
+  const handleSaveMemo = async (id: string) => {
+    try {
+      const res = await fetch(`/api/inquiries/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminNotes: editingMemo }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInquiries((prev) =>
+          prev.map((item) => (item.id === id ? { ...item, adminNotes: editingMemo } : item))
+        );
+        setEditingId(null);
+      }
+    } catch (err) {
+      alert('메모 저장에 실패했습니다.');
+    }
+  };
+
+  // Delete Handler
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`${name}님의 수강 신청 내역을 정말 삭제하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(`/api/inquiries/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setInquiries((prev) => prev.filter((item) => item.id !== id));
+      }
+    } catch (err) {
+      alert('삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  // Filtered list
+  const filteredInquiries = inquiries.filter((item) => {
+    const matchesStatus =
+      selectedStatusFilter === '전체' || item.status === selectedStatusFilter;
+    const matchesSearch =
+      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.phone.includes(searchTerm) ||
+      item.courseInterest.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.message && item.message.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    return matchesStatus && matchesSearch;
+  });
+
+  // Excel Export
+  const handleExportToExcel = () => {
+    if (inquiries.length === 0) {
+      alert('다운로드할 수강 신청 데이터가 없습니다.');
+      return;
+    }
+
+    const excelData = filteredInquiries.map((item, index) => ({
+      '연번': index + 1,
+      '접수번호': item.id,
+      '접수일시': new Date(item.createdAt).toLocaleString('ko-KR'),
+      '성함': item.name,
+      '연락처': item.phone,
+      '희망 강좌': item.courseInterest,
+      '희망 시간대': item.preferredTime,
+      '내일배움카드': item.hasNaeilCard,
+      '신분/구분': item.userCategory,
+      '추가 문의사항': item.message || '-',
+      '진행 상태': item.status,
+      '관리자 메모': item.adminNotes || '-',
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    
+    // Auto column width
+    const max_width = excelData.reduce((acc: any, row: any) => {
+      Object.keys(row).forEach((key, idx) => {
+        const valStr = String(row[key] || '');
+        acc[idx] = Math.max(acc[idx] || 10, valStr.length * 2 + 2);
+      });
+      return acc;
+    }, []);
+    worksheet['!cols'] = max_width.map((w: number) => ({ wch: Math.min(w, 50) }));
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '수강신청목록');
+
+    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    XLSX.writeFile(workbook, `홍천중앙정보처리학원_수강신청목록_${todayStr}.xlsx`);
+  };
+
+  // Stats
+  const totalCount = inquiries.length;
+  const pendingCount = inquiries.filter((i) => i.status === '상담대기').length;
+  const completedCount = inquiries.filter((i) => i.status === '상담완료').length;
+  const registeredCount = inquiries.filter((i) => i.status === '등록완료').length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-fadeIn overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden my-auto">
+        
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-5 sm:p-6 text-white flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-blue-600/30 border border-blue-400/40 rounded-2xl text-blue-300">
+              <FileSpreadsheet className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold rounded-full">
+                  원장님 / 관리자 전용
+                </span>
+                <span className="text-xs text-slate-300">홍천 중앙정보처리학원</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-0.5">
+                온라인 수강신청 누적 데이터 관리
+              </h2>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Navigation Bar (When Authenticated) */}
+        {isAuthenticated && (
+          <div className="bg-slate-900 border-t border-slate-800 px-5 sm:px-6 py-2.5 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab('inquiries')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  activeTab === 'inquiries'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>수강 신청 목록 ({inquiries.length}건)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('notice')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  activeTab === 'notice'
+                    ? 'bg-amber-500 text-slate-950 shadow-md'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                <Megaphone className="w-4 h-4" />
+                <span>개강 공지 팝업 관리</span>
+                {noticeConfig.enabled ? (
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" title="팝업 노출 중" />
+                ) : (
+                  <span className="px-1.5 py-0.5 text-[10px] bg-slate-700 text-slate-400 rounded">OFF</span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('boardNotices')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  activeTab === 'boardNotices'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                <Bell className="w-4 h-4" />
+                <span>공지·자격시험 관리 ({boardNotices.length}건)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('popularCourses')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  activeTab === 'popularCourses'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                <Flame className="w-4 h-4 text-amber-400" />
+                <span>실시간 인기강좌 관리 ({popularCourses.length}건)</span>
+              </button>
+            </div>
+
+            {activeTab === 'inquiries' && (
+              <button
+                onClick={handleExportToExcel}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
+                title="엑셀파일로 다운로드"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>엑셀 다운로드 (.xlsx)</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Modal Body */}
+        {!isAuthenticated ? (
+          /* Password Authentication Lock Screen */
+          <div className="p-8 sm:p-12 bg-slate-50 flex-1 flex flex-col items-center justify-center text-center my-auto">
+            <div className="w-16 h-16 rounded-3xl bg-blue-100 text-blue-600 flex items-center justify-center mb-4 shadow-inner">
+              <Lock className="w-8 h-8 text-blue-600 animate-pulse" />
+            </div>
+            
+            <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mb-1">
+              관리자 비밀번호 확인
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 max-w-sm mb-6 font-medium">
+              신청내역 조회 및 개강 공지 관리는 원장님/관리자 전용입니다.<br />
+              비밀번호를 입력해 주세요.
+            </p>
+
+            <form onSubmit={handlePasswordSubmit} className="w-full max-w-xs space-y-3">
+              <div>
+                <input
+                  type="password"
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value);
+                    if (pinError) setPinError(false);
+                  }}
+                  placeholder="비밀번호 입력 (4자리)"
+                  maxLength={10}
+                  className={`w-full px-4 py-3 text-center text-lg tracking-widest font-black rounded-2xl border bg-white shadow-sm focus:outline-none transition-all ${
+                    pinError
+                      ? 'border-red-500 ring-2 ring-red-200 text-red-600'
+                      : 'border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900'
+                  }`}
+                  autoFocus
+                />
+                {pinError && (
+                  <p className="text-xs text-red-600 font-bold mt-2 flex items-center justify-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>비밀번호가 올바르지 않습니다. 다시 입력해주세요.</span>
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-200 hover:shadow-blue-300 transition-all cursor-pointer"
+              >
+                관리자 인증 확인
+              </button>
+            </form>
+
+            <p className="text-[11px] text-slate-400 mt-6 font-medium">
+              * 비밀번호 분실 시 시스템 담당자에게 문의 바랍니다.
+            </p>
+          </div>
+        ) : activeTab === 'notice' ? (
+          /* Notice Popup Management Tab Content */
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 space-y-5">
+            {noticeSuccessMsg && (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-bold flex items-center justify-between shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>{noticeSuccessMsg}</span>
+                </div>
+                <span className="text-xs text-emerald-600 font-bold bg-emerald-100 px-2.5 py-1 rounded-full">
+                  실시간 반영 완료
+                </span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Left: Edit Form */}
+              <form onSubmit={handleSaveNotice} className="lg:col-span-7 bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <Megaphone className="w-5 h-5 text-amber-500" />
+                      <span>개강 공지 팝업 설정</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                      홈페이지 오픈 시 자동으로 뜨는 개강 안내 팝업창을 수정·관리합니다.
+                    </p>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <button
+                    type="button"
+                    onClick={() => setNoticeConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl font-black text-xs transition-all cursor-pointer border ${
+                      noticeConfig.enabled
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : 'bg-slate-100 text-slate-500 border-slate-300'
+                    }`}
+                  >
+                    {noticeConfig.enabled ? (
+                      <>
+                        <ToggleRight className="w-5 h-5 text-emerald-600" />
+                        <span>팝업 노출 중 (ON)</span>
+                      </>
+                    ) : (
+                      <>
+                        <ToggleLeft className="w-5 h-5 text-slate-400" />
+                        <span>팝업 비활성 (OFF)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    1. 상단 뱃지 문구
+                  </label>
+                  <input
+                    type="text"
+                    value={noticeConfig.badgeText}
+                    onChange={(e) => setNoticeConfig({ ...noticeConfig, badgeText: e.target.value })}
+                    placeholder="예: 2026년 하반기 신규 개강 안내"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    2. 팝업 메인 제목
+                  </label>
+                  <input
+                    type="text"
+                    value={noticeConfig.title}
+                    onChange={(e) => setNoticeConfig({ ...noticeConfig, title: e.target.value })}
+                    placeholder="예: 홍천 중앙정보처리학원 8~9월 수강생 모집"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-black focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    3. 서브 타이틀 / 소제목
+                  </label>
+                  <input
+                    type="text"
+                    value={noticeConfig.subtitle}
+                    onChange={(e) => setNoticeConfig({ ...noticeConfig, subtitle: e.target.value })}
+                    placeholder="예: 국비지원 최대 100% 지원 & 1:1 맞춤 실습 교육"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    4. 개강 공지 상세 내용
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={noticeConfig.content}
+                    onChange={(e) => setNoticeConfig({ ...noticeConfig, content: e.target.value })}
+                    placeholder="개강하는 주요 과목, 수강 대상, 국민내일배움카드 안내 등을 적어주세요."
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none leading-relaxed"
+                    required
+                  />
+                </div>
+
+                {/* 5. 개강 일정 및 시간대 (4개 항목 관리) */}
+                <div className="space-y-3 bg-blue-50/50 border border-blue-100 p-4 rounded-2xl">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-black text-blue-950 flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-blue-600" />
+                      <span>5. 개강 일정 및 시간대 안내 (과정별 4개 항목 관리)</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleResetSchedules}
+                        className="text-[11px] font-bold text-slate-500 hover:text-slate-700 flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 cursor-pointer"
+                        title="기본 4개 과정으로 초기화"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>기본4개 초기화</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAddScheduleRow}
+                        className="text-[11px] font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-100 hover:bg-blue-200 border border-blue-300 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>항목 추가</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Single fallback text input for general notice summary */}
+                  <div className="mb-2">
+                    <span className="text-[11px] font-bold text-slate-600 mb-1 block">요약 안내문구 (선택)</span>
+                    <input
+                      type="text"
+                      value={noticeConfig.dateText}
+                      onChange={(e) => setNoticeConfig({ ...noticeConfig, dateText: e.target.value })}
+                      placeholder="예: 개강일: 2026년 8월 ~ 9월 수시 개강 (오전/오후/야간반 운영)"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Structured Schedule List (4+ slots) */}
+                  <div className="space-y-3 pt-1">
+                    {(noticeConfig.schedules || defaultSchedules).map((sch, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 bg-white border border-blue-200 rounded-xl shadow-sm space-y-2 relative group"
+                      >
+                        <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-1.5">
+                          <span className="font-black text-blue-900 flex items-center gap-1">
+                            <span className="w-4 h-4 rounded bg-blue-600 text-white font-bold flex items-center justify-center text-[10px]">
+                              {idx + 1}
+                            </span>
+                            <span>개강 과정 #{idx + 1}</span>
+                          </span>
+                          {(noticeConfig.schedules || []).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveScheduleRow(idx)}
+                              className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 cursor-pointer"
+                              title="삭제"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">과정명</label>
+                            <input
+                              type="text"
+                              value={sch.courseName}
+                              onChange={(e) => handleScheduleChange(idx, 'courseName', e.target.value)}
+                              placeholder="예: 컴퓨터활용능력 1급/2급"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-xs font-semibold focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">개강일</label>
+                            <input
+                              type="text"
+                              value={sch.startDate}
+                              onChange={(e) => handleScheduleChange(idx, 'startDate', e.target.value)}
+                              placeholder="예: 8월 18일 개강"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-xs font-semibold focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">수강시간</label>
+                            <input
+                              type="text"
+                              value={sch.timeSlot}
+                              onChange={(e) => handleScheduleChange(idx, 'timeSlot', e.target.value)}
+                              placeholder="예: 오전 10:00 / 야간 19:00"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-xs font-semibold focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    6. 신청 버튼 문구
+                  </label>
+                  <input
+                    type="text"
+                    value={noticeConfig.actionText}
+                    onChange={(e) => setNoticeConfig({ ...noticeConfig, actionText: e.target.value })}
+                    placeholder="예: 지금 온라인 수강신청하기"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-bold focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={savingNotice}
+                    className="w-full py-3.5 px-6 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-sm rounded-2xl shadow-lg shadow-amber-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{savingNotice ? '저장 중...' : '공지 설정 저장 및 홈페이지 실시간 적용'}</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Right: Live Preview */}
+              <div className="lg:col-span-5 bg-slate-900 p-5 rounded-3xl text-white space-y-4 shadow-xl border border-slate-800 sticky top-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <span className="text-xs font-extrabold text-amber-400 flex items-center gap-1.5">
+                    <Eye className="w-4 h-4" />
+                    <span>홈페이지 팝업 실시간 미리보기</span>
+                  </span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    noticeConfig.enabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  }`}>
+                    {noticeConfig.enabled ? '팝업 노출 ON' : '팝업 비활성 OFF'}
+                  </span>
+                </div>
+
+                {/* Mock Card */}
+                <div className="bg-white rounded-2xl overflow-hidden text-slate-900 shadow-2xl border border-slate-200">
+                  <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-4 text-white">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] mb-2">
+                      <Megaphone className="w-3 h-3" />
+                      <span>{noticeConfig.badgeText || '공지사항'}</span>
+                    </span>
+                    <h4 className="font-black text-base leading-snug">{noticeConfig.title || '공지 제목'}</h4>
+                    {noticeConfig.subtitle && (
+                      <p className="text-[11px] text-blue-200 font-medium mt-0.5">{noticeConfig.subtitle}</p>
+                    )}
+                  </div>
+
+                  <div className="p-4 space-y-3">
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 leading-relaxed font-medium whitespace-pre-line">
+                      {noticeConfig.content || '공지 내용 영역'}
+                    </div>
+
+                    {/* Schedule List Preview */}
+                    {noticeConfig.schedules && noticeConfig.schedules.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-black text-blue-900 flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                          <span>주요 과목 개강 일정 및 강의시간</span>
+                        </p>
+                        <div className="space-y-1">
+                          {noticeConfig.schedules.map((item, idx) => (
+                            <div key={idx} className="p-2 bg-blue-50 border border-blue-200 rounded-xl text-[11px] flex justify-between items-center">
+                              <span className="font-bold text-slate-900 truncate max-w-[130px]">{item.courseName || '과정명'}</span>
+                              <div className="flex items-center gap-1 text-[10px]">
+                                {item.startDate && <span className="text-blue-800 font-semibold">{item.startDate}</span>}
+                                {item.timeSlot && <span className="text-amber-950 bg-amber-100 px-1 py-0.5 rounded font-bold">{item.timeSlot}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : noticeConfig.dateText ? (
+                      <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 text-xs flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span className="font-bold">{noticeConfig.dateText}</span>
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs rounded-xl shadow flex items-center justify-center gap-1"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>{noticeConfig.actionText || '온라인 수강 신청하기'}</span>
+                    </button>
+                  </div>
+
+                  <div className="px-4 py-2 bg-slate-100 border-t border-slate-200 flex justify-between text-[10px] text-slate-500 font-bold">
+                    <span>오늘 하루 동안 보지 않기</span>
+                    <span>닫기</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'boardNotices' ? (
+          /* Board Notices (공지사항 & 자격시험 일정) Management Tab */
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 space-y-5">
+            {boardNoticeSuccessMsg && (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-bold flex items-center justify-between shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>{boardNoticeSuccessMsg}</span>
+                </div>
+                <span className="text-xs text-emerald-600 font-bold bg-emerald-100 px-2.5 py-1 rounded-full">
+                  실시간 반영 완료
+                </span>
+              </div>
+            )}
+
+            {/* Header & Write Button */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <Bell className="w-5 h-5 text-blue-600" />
+                  <span>공지사항 & 자격시험 일정 관리</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  홈페이지 '공지사항 & 자격시험 일정' 및 메인화면 소식란에 실시간 반영되는 공지글을 등록·수정·삭제합니다.
+                </p>
+              </div>
+
+              {!isNoticeFormOpen && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreateNoticeForm}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>새 공지/시험일정 작성</span>
+                </button>
+              )}
+            </div>
+
+            {/* Add / Edit Form Box */}
+            {isNoticeFormOpen && (
+              <form onSubmit={handleSaveBoardNoticeSubmit} className="bg-white p-6 rounded-3xl border border-blue-200 shadow-md space-y-4 animate-fadeIn">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <Edit3 className="w-4 h-4 text-blue-600" />
+                    <span>{editingBoardNotice ? '공지사항 / 시험일정 수정' : '새 공지사항 / 시험일정 작성'}</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsNoticeFormOpen(false)}
+                    className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="md:col-span-8">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                      공지 제목 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={noticeFormTitle}
+                      onChange={(e) => setNoticeFormTitle(e.target.value)}
+                      placeholder="예: 2026년도 국민내일배움카드 신규 수강생 모집 안내"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      required
+                    />
+                  </div>
+
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">카테고리</label>
+                    <select
+                      value={noticeFormCategory}
+                      onChange={(e) => setNoticeFormCategory(e.target.value as Notice['category'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    >
+                      <option value="모집안내">모집안내</option>
+                      <option value="시험일정">시험일정</option>
+                      <option value="국비지원">국비지원</option>
+                      <option value="학원소개">학원소개</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">작성/등록일자</label>
+                    <input
+                      type="date"
+                      value={noticeFormDate}
+                      onChange={(e) => setNoticeFormDate(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6 flex items-center">
+                    <label className="flex items-center gap-2 cursor-pointer mt-5">
+                      <input
+                        type="checkbox"
+                        checked={noticeFormImportant}
+                        onChange={(e) => setNoticeFormImportant(e.target.checked)}
+                        className="w-4 h-4 text-red-600 rounded border-slate-300 focus:ring-red-500"
+                      />
+                      <span className="text-xs font-extrabold text-red-600 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>중요 공지로 지정 (붉은색 강조 라벨)</span>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-12">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                      공지 내용 <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      rows={5}
+                      value={noticeFormContent}
+                      onChange={(e) => setNoticeFormContent(e.target.value)}
+                      placeholder="상세 내용을 입력하세요..."
+                      className="w-full p-3.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsNoticeFormOpen(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{editingBoardNotice ? '수정 내용 저장' : '공지사항 등록하기'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* List of Board Notices */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 bg-slate-100/80 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-600">
+                <span>등록된 공지 목록 ({boardNotices.length}개)</span>
+                <button
+                  type="button"
+                  onClick={fetchBoardNotices}
+                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>새로고침</span>
+                </button>
+              </div>
+
+              {boardNotices.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 text-xs font-medium">
+                  등록된 공지사항이 없습니다. [새 공지/시험일정 작성] 버튼을 클릭해 등록하세요.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {boardNotices.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-4 sm:p-5 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="space-y-1.5 max-w-2xl">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                              item.important
+                                ? 'bg-red-100 text-red-800 border border-red-200'
+                                : 'bg-blue-50 text-blue-800 border border-blue-200'
+                            }`}
+                          >
+                            {item.category}
+                          </span>
+                          {item.important && (
+                            <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-full font-black">
+                              중요
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {item.date}
+                          </span>
+                        </div>
+
+                        <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                          {item.title}
+                        </h4>
+
+                        <p className="text-xs text-slate-600 line-clamp-2 whitespace-pre-line leading-relaxed">
+                          {item.content}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditNoticeForm(item)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold text-xs border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>수정</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBoardNoticeItem(item.id, item.title)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-700 font-bold text-xs border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>삭제</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : activeTab === 'popularCourses' ? (
+          /* Real-time Popular Courses (실시간 인기 수강 강좌) Management Tab */
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 space-y-5">
+            {popSuccessMsg && (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-bold flex items-center justify-between shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>{popSuccessMsg}</span>
+                </div>
+                <span className="text-xs text-emerald-600 font-bold bg-emerald-100 px-2.5 py-1 rounded-full">
+                  실시간 반영 완료
+                </span>
+              </div>
+            )}
+
+            {/* Header & Create Button */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-amber-500 fill-amber-500" />
+                  <span>실시간 인기 수강 강좌 관리</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  메인화면(Hero 카드)에 노출되는 대표 수강 모집 정보(강좌명, 수강시간대, 배지, 지원혜택 설명)를 실시간 등록·수정·삭제합니다.
+                </p>
+              </div>
+
+              {!isPopFormOpen && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreatePopForm}
+                  className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>새 인기 강좌 등록</span>
+                </button>
+              )}
+            </div>
+
+            {/* Add / Edit Form Box */}
+            {isPopFormOpen && (
+              <form onSubmit={handleSavePopCourseSubmit} className="bg-white p-6 rounded-3xl border border-purple-200 shadow-md space-y-4 animate-fadeIn">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <Edit3 className="w-4 h-4 text-purple-600" />
+                    <span>{editingPopCourse ? '인기 수강 강좌 수정' : '새 인기 수강 강좌 등록'}</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsPopFormOpen(false)}
+                    className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="md:col-span-8">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                      강좌명 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={popFormTitle}
+                      onChange={(e) => setPopFormTitle(e.target.value)}
+                      placeholder="예: 컴퓨터활용능력 1급/2급 (실기)"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      required
+                    />
+                  </div>
+
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">수강 시간대</label>
+                    <input
+                      type="text"
+                      value={popFormTimeSlot}
+                      onChange={(e) => setPopFormTimeSlot(e.target.value)}
+                      placeholder="예: 09:30 - 12:30 또는 야간 19:00"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">라벨 / 배지 문구</label>
+                    <input
+                      type="text"
+                      value={popFormBadge}
+                      onChange={(e) => setPopFormBadge(e.target.value)}
+                      placeholder="예: 모집중 · 국비지원"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">배지 강조 색상</label>
+                    <select
+                      value={popFormBadgeColor}
+                      onChange={(e) => setPopFormBadgeColor(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    >
+                      <option value="blue">파란색 (국비/기본)</option>
+                      <option value="emerald">초록색 (인기/신규)</option>
+                      <option value="amber">주황색 (추천/시니어)</option>
+                      <option value="purple">보라색 (특화/코딩)</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-12">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">지원 혜택 및 상세 설명</label>
+                    <input
+                      type="text"
+                      value={popFormDescription}
+                      onChange={(e) => setPopFormDescription(e.target.value)}
+                      placeholder="예: 자부담금 0원~최대 100% 정부지원 / 1:1 기출 체크 지원"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsPopFormOpen(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{editingPopCourse ? '수정 내용 저장' : '인기 강좌 등록하기'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* List of Popular Courses */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 bg-slate-100/80 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-600">
+                <span>현재 노출 중인 인기 강좌 목록 ({popularCourses.length}개)</span>
+                <button
+                  type="button"
+                  onClick={fetchPopularCoursesAdmin}
+                  className="inline-flex items-center gap-1 text-purple-600 hover:text-purple-800 cursor-pointer font-bold"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>새로고침</span>
+                </button>
+              </div>
+
+              {popularCourses.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 text-xs font-medium">
+                  등록된 인기 강좌가 없습니다. [새 인기 강좌 등록] 버튼을 눌러 등록해 보세요.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {popularCourses.map((item) => {
+                    const badgeColor = item.badgeColor || 'blue';
+                    const colorClasses = badgeColor === 'emerald'
+                      ? { bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
+                      : badgeColor === 'amber'
+                      ? { bg: 'bg-amber-100 text-amber-800 border-amber-200' }
+                      : badgeColor === 'purple'
+                      ? { bg: 'bg-purple-100 text-purple-800 border-purple-200' }
+                      : { bg: 'bg-blue-100 text-blue-800 border-blue-200' };
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-4 sm:p-5 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1.5 max-w-2xl">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${colorClasses.bg}`}
+                            >
+                              {item.badge}
+                            </span>
+                            <span className="text-xs text-slate-500 font-mono font-bold flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              {item.timeSlot}
+                            </span>
+                          </div>
+
+                          <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                            {item.title}
+                          </h4>
+
+                          {item.description && (
+                            <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                              {item.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditPopForm(item)}
+                            className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-purple-50 text-slate-700 hover:text-purple-700 font-bold text-xs border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>수정</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePopCourseItem(item.id, item.title)}
+                            className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-700 font-bold text-xs border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>삭제</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Admin Inquiry List Content */
+          <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
+          
+          {/* Summary Metric Badges */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-500">전체 수강신청</p>
+                <p className="text-2xl font-black text-slate-900 mt-1">{totalCount}건</p>
+              </div>
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-amber-700">상담 대기</p>
+                <p className="text-2xl font-black text-amber-600 mt-1">{pendingCount}건</p>
+              </div>
+              <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
+                <Clock className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-blue-200/80 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-blue-700">상담 완료</p>
+                <p className="text-2xl font-black text-blue-600 mt-1">{completedCount}건</p>
+              </div>
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-emerald-200/80 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-emerald-700">최종 등록완료</p>
+                <p className="text-2xl font-black text-emerald-600 mt-1">{registeredCount}건</p>
+              </div>
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                <UserCheck className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* Search, Filter & Delete Controls */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="이름, 연락처, 강좌 검색..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                />
+              </div>
+
+              {/* Batch delete buttons */}
+              {selectedIds.length > 0 && (
+                <button
+                  onClick={handleDeleteSelected}
+                  className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="선택한 항목 삭제"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>선택 삭제 ({selectedIds.length}건)</span>
+                </button>
+              )}
+
+              {inquiries.length > 0 && (
+                <button
+                  onClick={handleClearAll}
+                  className="px-3 py-2 bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 font-bold text-xs rounded-xl border border-slate-200 transition-all flex items-center gap-1 cursor-pointer ml-auto sm:ml-0"
+                  title="전체 신청자 명단 초기화/삭제"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>전체 명단 삭제</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="flex items-center gap-1.5 text-xs text-slate-600 font-bold">
+                <Filter className="w-4 h-4 text-slate-400" />
+                <span>상태 필터:</span>
+              </div>
+              <select
+                value={selectedStatusFilter}
+                onChange={(e) => setSelectedStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none"
+              >
+                <option value="전체">전체 보기 ({inquiries.length})</option>
+                <option value="상담대기">상담대기 ({pendingCount})</option>
+                <option value="상담완료">상담완료 ({completedCount})</option>
+                <option value="등록완료">등록완료 ({registeredCount})</option>
+                <option value="보류">보류</option>
+              </select>
+
+              <button
+                onClick={fetchInquiries}
+                disabled={loading}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                title="새로고침"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Table Container */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-100/80 text-slate-700 font-extrabold border-b border-slate-200 uppercase tracking-wider">
+                  <th className="p-3.5 text-center w-10 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredInquiries.length > 0 &&
+                        filteredInquiries.every((item) => selectedIds.includes(item.id))
+                      }
+                      onChange={() => handleSelectAllFiltered(filteredInquiries)}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      title="전체 선택/해제"
+                    />
+                  </th>
+                  <th className="p-3.5 whitespace-nowrap">접수번호 / 일시</th>
+                  <th className="p-3.5 whitespace-nowrap">신청자 성함</th>
+                  <th className="p-3.5 whitespace-nowrap">연락처</th>
+                  <th className="p-3.5">관심 강좌</th>
+                  <th className="p-3.5 whitespace-nowrap">시간대 / 카드 / 구분</th>
+                  <th className="p-3.5 min-w-[160px]">추가 문의사항</th>
+                  <th className="p-3.5 whitespace-nowrap">진행 상태</th>
+                  <th className="p-3.5 min-w-[180px]">관리자 메모</th>
+                  <th className="p-3.5 text-center whitespace-nowrap">관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200/80 font-medium">
+                {filteredInquiries.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="p-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <FileSpreadsheet className="w-8 h-8 text-slate-300" />
+                        <p className="font-bold text-slate-500">신청 내역이 존재하지 않습니다.</p>
+                        <p className="text-xs text-slate-400">온라인 수강신청이 접수되면 이곳에 실시간으로 기록됩니다.</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredInquiries.map((item) => {
+                    const isSelected = selectedIds.includes(item.id);
+                    return (
+                      <tr
+                        key={item.id}
+                        className={`transition-colors ${
+                          isSelected ? 'bg-red-50/60 font-semibold' : 'hover:bg-blue-50/40'
+                        }`}
+                      >
+                        {/* Checkbox */}
+                        <td className="p-3.5 text-center w-10 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelect(item.id)}
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </td>
+
+                        {/* ID & Date */}
+                        <td className="p-3.5 whitespace-nowrap">
+                          <span className="font-bold text-slate-800 block">{item.id}</span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            {new Date(item.createdAt).toLocaleString('ko-KR', {
+                              month: 'numeric',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </td>
+
+                      {/* Name */}
+                      <td className="p-3.5 whitespace-nowrap font-black text-slate-900 text-sm">
+                        {item.name}
+                      </td>
+
+                      {/* Phone */}
+                      <td className="p-3.5 whitespace-nowrap">
+                        <a
+                          href={`tel:${item.phone}`}
+                          className="inline-flex items-center gap-1 font-bold text-blue-600 hover:underline"
+                        >
+                          <Phone className="w-3 h-3" />
+                          <span>{item.phone}</span>
+                        </a>
+                      </td>
+
+                      {/* Course */}
+                      <td className="p-3.5 text-slate-800 font-bold max-w-xs">
+                        {item.courseInterest}
+                      </td>
+
+                      {/* Details */}
+                      <td className="p-3.5 whitespace-nowrap text-slate-600 space-y-0.5 text-[11px]">
+                        <p>🕒 {item.preferredTime}</p>
+                        <p>💳 내일배움: <span className="font-bold text-slate-800">{item.hasNaeilCard}</span></p>
+                        <p>👤 {item.userCategory}</p>
+                      </td>
+
+                      {/* Message */}
+                      <td className="p-3.5 text-slate-600 text-xs">
+                        {item.message ? (
+                          <div className="p-2 bg-slate-50 rounded-xl border border-slate-200/60 line-clamp-3 italic">
+                            "{item.message}"
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+
+                      {/* Status Dropdown */}
+                      <td className="p-3.5 whitespace-nowrap">
+                        <select
+                          value={item.status}
+                          onChange={(e) =>
+                            handleStatusChange(item.id, e.target.value as InquiryRecord['status'])
+                          }
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer ${
+                            item.status === '상담대기'
+                              ? 'bg-amber-100 text-amber-800 border-amber-300'
+                              : item.status === '상담완료'
+                              ? 'bg-blue-100 text-blue-800 border-blue-300'
+                              : item.status === '등록완료'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : 'bg-slate-200 text-slate-800 border-slate-300'
+                          }`}
+                        >
+                          <option value="상담대기">⏳ 상담대기</option>
+                          <option value="상담완료">💬 상담완료</option>
+                          <option value="등록완료">✅ 등록완료</option>
+                          <option value="보류">⏸ 보류</option>
+                        </select>
+                      </td>
+
+                      {/* Memo Inline Edit */}
+                      <td className="p-3.5 text-xs">
+                        {editingId === item.id ? (
+                          <div className="flex gap-1 items-center">
+                            <input
+                              type="text"
+                              value={editingMemo}
+                              onChange={(e) => setEditingMemo(e.target.value)}
+                              placeholder="상담 메모 입력..."
+                              className="p-1.5 rounded-lg border border-blue-300 text-xs w-full focus:outline-none focus:ring-2 focus:ring-blue-600"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleSaveMemo(item.id)}
+                              className="px-2 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold whitespace-nowrap"
+                            >
+                              저장
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="px-1.5 py-1 bg-slate-200 text-slate-700 rounded-lg text-xs"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => {
+                              setEditingId(item.id);
+                              setEditingMemo(item.adminNotes || '');
+                            }}
+                            className="group cursor-pointer p-1.5 rounded-xl hover:bg-slate-100 transition-all flex items-center justify-between text-slate-700"
+                            title="클릭하여 메모 수정"
+                          >
+                            <span className={item.adminNotes ? 'font-medium' : 'text-slate-300 italic'}>
+                              {item.adminNotes || '메모 작성...'}
+                            </span>
+                            <Edit3 className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity ml-1" />
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Action */}
+                      <td className="p-3.5 text-center whitespace-nowrap">
+                        <button
+                          onClick={() => handleDelete(item.id, item.name)}
+                          className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                          title="삭제"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+        )}
+
+        {/* Modal Footer */}
+        <div className="p-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <p className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>상담 신청 데이터는 서버에 안전하게 관리·보관됩니다.</span>
+          </p>
+          <div className="flex items-center gap-3">
+            {isAuthenticated && (
+              <button
+                onClick={handleExportToExcel}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>전체 엑셀 다운로드</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs cursor-pointer"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   CreditCard,
@@ -15,6 +15,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { COURSES_DATA, ACADEMY_INFO, NOTICES_DATA } from '../data/coursesData';
+import { Notice } from '../types';
 
 interface HomeHubProps {
   onNavigate: (pageId: string) => void;
@@ -28,7 +29,30 @@ export const HomeHub: React.FC<HomeHubProps> = ({
   onSelectCourseForInquiry,
 }) => {
   const featuredCourses = COURSES_DATA.slice(0, 3);
-  const recentNotices = NOTICES_DATA.slice(0, 3);
+  const [boardNotices, setBoardNotices] = useState<Notice[]>(NOTICES_DATA);
+
+  const fetchNotices = async () => {
+    try {
+      const res = await fetch('/api/notices');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        setBoardNotices(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load notices in HomeHub:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotices();
+    const handleUpdate = () => fetchNotices();
+    window.addEventListener('board_notices_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('board_notices_updated', handleUpdate);
+    };
+  }, []);
+
+  const recentNotices = boardNotices.slice(0, 3);
 
   const mainPages = [
     {
@@ -42,18 +66,10 @@ export const HomeHub: React.FC<HomeHubProps> = ({
     {
       id: 'national-support',
       title: '국민내일배움카드',
-      desc: '국비지원 신청 자격, 발급 절차 및 자부담금 안내',
+      desc: '국비지원 신청 자격, 발급 절차 및 지원금 혜택 안내',
       icon: CreditCard,
       badge: '최대 100% 지원',
       color: 'from-emerald-600 to-teal-600',
-    },
-    {
-      id: 'calculator',
-      title: '수강료 자부담 계산기',
-      desc: '신분별 맞춤 수강료 및 국비지원 예상액 즉시 계산',
-      icon: Calculator,
-      badge: '1초 모의계산',
-      color: 'from-amber-500 to-orange-600',
     },
     {
       id: 'intro',
@@ -213,14 +229,14 @@ export const HomeHub: React.FC<HomeHubProps> = ({
               </h3>
               <p className="text-slate-300 text-xs sm:text-sm leading-relaxed max-w-xl">
                 구직자, 재직자, 대학생, 자영업자 누구나 5년간 300만원~500만원 지원!
-                내 지원금액이 얼마인지 수강료 계산기로 1초 만에 확인하실 수 있습니다.
+                자세한 지원 자격 및 수강 신청은 온라인 수강 문의를 이용해 주세요.
               </p>
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
-                  onClick={() => onNavigate('calculator')}
+                  onClick={() => onNavigate('inquiry')}
                   className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs sm:text-sm rounded-full shadow-lg transition-all"
                 >
-                  수강료 자부담 계산기 바로가기
+                  온라인 수강문의 바로가기
                 </button>
                 <button
                   onClick={() => onNavigate('national-support')}

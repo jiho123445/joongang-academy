@@ -7,16 +7,17 @@ import { PageHeader } from './components/PageHeader';
 import { CourseExplorer } from './components/CourseExplorer';
 import { CourseDetailModal } from './components/CourseDetailModal';
 import { NationalSupportGuide } from './components/NationalSupportGuide';
-import { CalculatorSection } from './components/CalculatorSection';
 import { AcademyIntro } from './components/AcademyIntro';
 import { NoticeBoard } from './components/NoticeBoard';
 import { FaqSection } from './components/FaqSection';
 import { InquirySection } from './components/InquirySection';
+import { InquiryAdminModal } from './components/InquiryAdminModal';
+import { NoticePopupModal, PopupNoticeConfig } from './components/NoticePopupModal';
 import { LocationSection } from './components/LocationSection';
 import { Footer } from './components/Footer';
 import { AiConsultantModal } from './components/AiConsultantModal';
 import { MobileQuickBar } from './components/MobileQuickBar';
-import { ChevronRight, CreditCard, Calculator, FileText, MapPin, Award } from 'lucide-react';
+import { ChevronRight, CreditCard, FileText, MapPin, Award } from 'lucide-react';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<string>('home');
@@ -24,6 +25,39 @@ export default function App() {
   const [selectedCourseForModal, setSelectedCourseForModal] = useState<Course | null>(null);
   const [preselectedCourseForInquiry, setPreselectedCourseForInquiry] = useState<string>('');
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+
+  // Opening Notice Popup State
+  const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig | null>(null);
+  const [isNoticePopupOpen, setIsNoticePopupOpen] = useState<boolean>(false);
+
+  const fetchNoticeConfig = async (forceShow = false) => {
+    try {
+      const res = await fetch('/api/popup-notice');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setNoticeConfig(data.data);
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const hiddenDate = localStorage.getItem('hide_notice_popup_until');
+
+        if (data.data.enabled && (forceShow || hiddenDate !== todayStr)) {
+          setIsNoticePopupOpen(true);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load popup notice:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNoticeConfig();
+  }, []);
+
+  const handleHideToday = () => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    localStorage.setItem('hide_notice_popup_until', todayStr);
+    setIsNoticePopupOpen(false);
+  };
 
   // Sync state with URL hash for true multi-page navigation experience
   useEffect(() => {
@@ -31,7 +65,7 @@ export default function App() {
       const raw = window.location.hash.replace('#', '').trim();
       if (
         raw &&
-        ['courses', 'national-support', 'calculator', 'intro', 'notices', 'inquiry', 'location', 'home'].includes(raw)
+        ['courses', 'national-support', 'intro', 'notices', 'inquiry', 'location', 'home'].includes(raw)
       ) {
         setActiveSection(raw);
       } else if (raw === 'hero') {
@@ -49,6 +83,15 @@ export default function App() {
     setActiveSection(targetPage);
     window.location.hash = targetPage;
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // Open opening notice popup modal when Home button/logo is clicked
+    if (pageId === 'home' || pageId === 'hero') {
+      if (noticeConfig && noticeConfig.enabled) {
+        setIsNoticePopupOpen(true);
+      } else {
+        fetchNoticeConfig(true);
+      }
+    }
   };
 
   const handleSelectCourseForInquiry = (courseTitle: string) => {
@@ -64,6 +107,7 @@ export default function App() {
         activeSection={activeSection}
         onNavigate={handleNavigate}
         onOpenAiModal={() => setIsAiModalOpen(true)}
+        onOpenAdminModal={() => setIsAdminModalOpen(true)}
       />
 
       {/* Main Multi-Page Content Router */}
@@ -104,15 +148,15 @@ export default function App() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
               <div className="bg-white/60 backdrop-blur-xl rounded-3xl p-6 border border-white/80 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
-                  <h4 className="font-extrabold text-slate-900 text-base">내가 부담할 실수강료가 얼마인지 궁금하신가요?</h4>
-                  <p className="text-xs text-slate-600 mt-0.5">국민내일배움카드 지원금 적용시 예상 자부담금을 1초만에 산출해 보세요.</p>
+                  <h4 className="font-extrabold text-slate-900 text-base">국민내일배움카드 국비지원 혜택이 궁금하신가요?</h4>
+                  <p className="text-xs text-slate-600 mt-0.5">지원 대상, 신청 자격 및 최대 100% 수강료 지원 절차를 확인해 보세요.</p>
                 </div>
                 <button
-                  onClick={() => handleNavigate('calculator')}
+                  onClick={() => handleNavigate('national-support')}
                   className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md flex items-center gap-1.5 whitespace-nowrap"
                 >
-                  <Calculator className="w-4 h-4" />
-                  <span>수강료 자부담 계산기 바로가기</span>
+                  <CreditCard className="w-4 h-4" />
+                  <span>국비지원 혜택 안내 바로가기</span>
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
@@ -151,37 +195,6 @@ export default function App() {
           </div>
         )}
 
-        {/* 4. CALCULATOR PAGE */}
-        {activeSection === 'calculator' && (
-          <div className="animate-fadeIn">
-            <PageHeader
-              title="수강료 자부담 계산기"
-              subtitle="신분 및 국민내일배움카드 소지 여부에 따른 실수강료 및 지원금 미리보기"
-              categoryName="수강료 산출"
-              onNavigateHome={() => handleNavigate('home')}
-            />
-            <CalculatorSection
-              onSelectCourseForInquiry={handleSelectCourseForInquiry}
-            />
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <div className="bg-white/60 backdrop-blur-xl rounded-3xl p-6 border border-white/80 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-extrabold text-slate-900 text-base">계산된 예상 수강료로 친절 상담을 받아보세요</h4>
-                  <p className="text-xs text-slate-600 mt-0.5">온라인으로 간편하게 신청하시면 담당 선생님이 친절히 안내드립니다.</p>
-                </div>
-                <button
-                  onClick={() => handleNavigate('inquiry')}
-                  className="px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md flex items-center gap-1.5 whitespace-nowrap"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>온라인 수강 상담 신청</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* 5. INTRO PAGE */}
         {activeSection === 'intro' && (
           <div className="animate-fadeIn">
@@ -196,7 +209,7 @@ export default function App() {
               <div className="bg-white/60 backdrop-blur-xl rounded-3xl p-6 border border-white/80 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
                   <h4 className="font-extrabold text-slate-900 text-base">직접 방문하시거나 전화 문의를 환영합니다</h4>
-                  <p className="text-xs text-slate-600 mt-0.5">홍천 중앙시장 입구 맞은편, 터미널 도보 5분 거리에 위치하고 있습니다.</p>
+                  <p className="text-xs text-slate-600 mt-0.5">홍천여자고등학교 인근 중앙약국 맞은편, 터미널 도보 5분 거리에 위치하고 있습니다.</p>
                 </div>
                 <button
                   onClick={() => handleNavigate('location')}
@@ -252,7 +265,10 @@ export default function App() {
               categoryName="상담신청"
               onNavigateHome={() => handleNavigate('home')}
             />
-            <InquirySection preselectedCourse={preselectedCourseForInquiry} />
+            <InquirySection
+              preselectedCourse={preselectedCourseForInquiry}
+              onOpenAdminModal={() => setIsAdminModalOpen(true)}
+            />
           </div>
         )}
 
@@ -261,7 +277,7 @@ export default function App() {
           <div className="animate-fadeIn">
             <PageHeader
               title="오시는 길 & 위치 안내"
-              subtitle="강원도 홍천군 홍천읍 신장대로 48, 2층 (중앙시장 맞은편)"
+              subtitle="강원도 홍천군 홍천읍 신장대로 48, 2층 (홍천여고 인근 중앙약국 맞은편)"
               categoryName="위치안내"
               onNavigateHome={() => handleNavigate('home')}
             />
@@ -289,6 +305,27 @@ export default function App() {
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
         onNavigateToInquiry={() => handleNavigate('inquiry')}
+      />
+
+      {/* Opening Notice Popup Modal */}
+      <NoticePopupModal
+        noticeConfig={noticeConfig}
+        isOpen={isNoticePopupOpen}
+        onClose={() => setIsNoticePopupOpen(false)}
+        onActionClick={() => {
+          setIsNoticePopupOpen(false);
+          handleNavigate('inquiry');
+        }}
+        onHideToday={handleHideToday}
+      />
+
+      {/* Admin Inquiry Data Management & Notice Modal */}
+      <InquiryAdminModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+        onNoticeUpdated={() => {
+          fetchNoticeConfig(true);
+        }}
       />
 
       {/* Mobile Fixed Quick Action Bar */}

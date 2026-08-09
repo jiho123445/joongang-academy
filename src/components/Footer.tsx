@@ -75,11 +75,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
                 </button>
               </li>
               <li>
-                <button onClick={() => onNavigate('calculator')} className="hover:text-blue-300 transition-colors">
-                  수강료 계산기
-                </button>
-              </li>
-              <li>
                 <button onClick={() => onNavigate('intro')} className="hover:text-blue-300 transition-colors">
                   학원 소개 & 원장 인사말
                 </button>

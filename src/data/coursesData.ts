@@ -13,7 +13,7 @@ export const COURSES_DATA: Course[] = [
     nationalSupport: true,
     subsidyRate: '최대 100% 국비지원',
     tuition: 320000,
-    selfPayEstimate: '0원 ~ 64,000원 (카드 유형별 상이)',
+    selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['컴퓨터활용능력 1급', '컴퓨터활용능력 2급'],
     curriculum: [
       '1주차: 컴퓨터 일반 기초 이론 및 엑셀 기본 입력/셀 서식',
@@ -36,7 +36,7 @@ export const COURSES_DATA: Course[] = [
     nationalSupport: true,
     subsidyRate: '100% 전액지원 ~ 최대 85%',
     tuition: 450000,
-    selfPayEstimate: '0원 (전액 무료 대상 다수)',
+    selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['ITQ 한글', 'ITQ 엑셀', 'ITQ 파워포인트'],
     curriculum: [
       '한글: 보고서 작성, 표 편집, 스타일 지정, 공문서 양식',
@@ -58,7 +58,7 @@ export const COURSES_DATA: Course[] = [
     nationalSupport: true,
     subsidyRate: '국비지원 최대 80%',
     tuition: 380000,
-    selfPayEstimate: '76,000원 ~ 114,000원',
+    selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['전산회계 1급', '전산회계 2급', '전산세무 2급'],
     curriculum: [
       '회계원리 및 자산, 부채, 자본, 수익, 비용의 처리',
@@ -81,7 +81,7 @@ export const COURSES_DATA: Course[] = [
     nationalSupport: true,
     subsidyRate: '국비지원 50%~80%',
     tuition: 400000,
-    selfPayEstimate: '80,000원 ~ 160,000원',
+    selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['정보처리기능사', '정보처리산업기사', '정보처리기사'],
     curriculum: [
       '알고리즘 기본 개념 및 순서도(Flowchart) 이해',
@@ -104,7 +104,7 @@ export const COURSES_DATA: Course[] = [
     nationalSupport: false,
     subsidyRate: '홍천군 지역 주민 할인 및 우대',
     tuition: 150000,
-    selfPayEstimate: '150,000원 (교재 무료 제공)',
+    selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['컴퓨터기초', '스마트폰활용'],
     curriculum: [
       '1단계: 컴퓨터 키보드/마우스 적응, 한글 타자 연습',
@@ -127,7 +127,7 @@ export const COURSES_DATA: Course[] = [
     nationalSupport: true,
     subsidyRate: 'K-디지털 / 내일배움카드 지원',
     tuition: 360000,
-    selfPayEstimate: '0원 ~ 72,000원',
+    selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['파이썬입문', 'COS자격증', '생성형AI실무'],
     curriculum: [
       '파이썬 변수, 조건문, 반복문, 함수 기초',
@@ -150,7 +150,7 @@ export const COURSES_DATA: Course[] = [
     nationalSupport: true,
     subsidyRate: '국비지원 50%~80%',
     tuition: 300000,
-    selfPayEstimate: '60,000원 ~ 120,000원',
+    selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['GTQ 포토샵 1급/2급', 'GTQi 일러스트'],
     curriculum: [
       '포토샵 화면 구성 및 툴바 기본 기능 활용',
@@ -172,7 +172,7 @@ export const COURSES_DATA: Course[] = [
     nationalSupport: false,
     subsidyRate: '형제/자매 수강 할인 10%',
     tuition: 200000,
-    selfPayEstimate: '180,000원 (할인 적용 시)',
+    selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['COS Pro', 'ITQ 학생', '정보올림피아드'],
     curriculum: [
       '블록코딩(엔트리/스크래치) 게임 및 애니메이션 제작',
@@ -243,7 +243,7 @@ export const FAQ_DATA: FAQItem[] = [
   {
     category: '위치/주차',
     question: '학원 위치와 주차장은 어디에 있나요?',
-    answer: '강원도 홍천군 홍천읍 신장대로 48 2층 (홍천 중앙시장 및 버스터미널 부근)에 위치해 있습니다. 건물 인근 공영주차장 및 수강생 주차공간을 이용하실 수 있습니다.'
+    answer: '강원도 홍천군 홍천읍 신장대로 48 2층 (홍천여자고등학교 인근 중앙약국 맞은편)에 위치해 있습니다. 건물 인근 공영주차장 및 수강생 주차공간을 이용하실 수 있습니다.'
   }
 ];
 
@@ -260,7 +260,7 @@ export const ACADEMY_INFO = {
   email: 'jiho1234@hanmail.net',
   businessHours: '평일 09:00 - 21:30 | 토요일 09:00 - 15:00 | 일요일/공휴일 휴무',
   domain: 'http://jahrd.com/',
-  busInfo: '홍천시외버스터미널 도보 5분 / 중앙시장 입구 버스정류장 하차',
+  busInfo: '홍천시외버스터미널 도보 5분 / 중앙약국 맞은편 하차',
   features: [
     { title: '1999년 설립 전통', desc: '25년 이상 축적된 깊은 교육 노하우와 지역 사회 신뢰' },
     { title: '국민내일배움카드 지정', desc: '고용노동부 인정 국비지원 지정 훈련기관 (최대 100% 지원)' },

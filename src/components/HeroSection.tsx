@@ -1,6 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Phone, Award, CreditCard, Sparkles, Search, ChevronRight, CheckCircle2, Users, Laptop, Bot } from 'lucide-react';
 import { ACADEMY_INFO } from '../data/coursesData';
+
+export interface PopularCourseItem {
+  id: string;
+  badge: string;
+  badgeColor?: string;
+  timeSlot: string;
+  title: string;
+  description: string;
+}
 
 interface HeroSectionProps {
   onNavigate: (sectionId: string) => void;
@@ -14,6 +23,51 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onSelectCategory,
 }) => {
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [popularCourses, setPopularCourses] = useState<PopularCourseItem[]>([
+    {
+      id: 'pop-1',
+      badge: '모집중 · 국비지원',
+      badgeColor: 'blue',
+      timeSlot: '09:30 - 12:30',
+      title: '컴퓨터활용능력 1급/2급 (실기)',
+      description: '자부담금 0원~최대 100% 정부지원',
+    },
+    {
+      id: 'pop-2',
+      badge: '모집중 · 인기',
+      badgeColor: 'emerald',
+      timeSlot: '14:00 - 17:00',
+      title: '전산세무회계 & KcLep 실무',
+      description: '회계원리부터 세무 신고 실무 원스톱',
+    },
+    {
+      id: 'pop-3',
+      badge: '추천 · 오전반',
+      badgeColor: 'amber',
+      timeSlot: '10:00 - 12:00',
+      title: '어르신 스마트폰 & 타자·컴퓨터 기초',
+      description: '친절한 1:1 눈높이 특별지도',
+    },
+  ]);
+
+  const fetchPopularCourses = async () => {
+    try {
+      const res = await fetch('/api/popular-courses');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        setPopularCourses(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch popular courses:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPopularCourses();
+    const handleUpdate = () => fetchPopularCourses();
+    window.addEventListener('popular_courses_updated', handleUpdate);
+    return () => window.removeEventListener('popular_courses_updated', handleUpdate);
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,38 +213,31 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               </p>
 
               <div className="space-y-3 mb-6">
-                <div className="p-4 bg-white/80 rounded-2xl border border-blue-100 shadow-sm">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold text-blue-600">모집중 · 국비지원</span>
-                    <span className="text-xs text-slate-400 font-mono">09:30 - 12:30</span>
-                  </div>
-                  <h3 className="font-bold text-slate-800 text-sm">
-                    컴퓨터활용능력 1급/2급 (실기)
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">자부담금 0원~최대 100% 정부지원</p>
-                </div>
+                {popularCourses.map((item, index) => {
+                  const badgeColor = item.badgeColor || 'blue';
+                  const colorClasses = badgeColor === 'emerald'
+                    ? { border: 'border-emerald-100', text: 'text-emerald-600' }
+                    : badgeColor === 'amber'
+                    ? { border: 'border-amber-100', text: 'text-amber-600' }
+                    : badgeColor === 'purple'
+                    ? { border: 'border-purple-100', text: 'text-purple-600' }
+                    : { border: 'border-blue-100', text: 'text-blue-600' };
 
-                <div className="p-4 bg-white/80 rounded-2xl border border-emerald-100 shadow-sm">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold text-emerald-600">모집중 · 인기</span>
-                    <span className="text-xs text-slate-400 font-mono">14:00 - 17:00</span>
-                  </div>
-                  <h3 className="font-bold text-slate-800 text-sm">
-                    전산세무회계 & KcLep 실무
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">회계원리부터 세무 신고 실무 원스톱</p>
-                </div>
-
-                <div className="p-4 bg-white/80 rounded-2xl border border-amber-100 shadow-sm">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold text-amber-600">추천 · 오전반</span>
-                    <span className="text-xs text-slate-400 font-mono">10:00 - 12:00</span>
-                  </div>
-                  <h3 className="font-bold text-slate-800 text-sm">
-                    어르신 스마트폰 & 타자·컴퓨터 기초
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-1">친절한 1:1 눈높이 특별지도</p>
-                </div>
+                  return (
+                    <div key={item.id || index} className={`p-4 bg-white/80 rounded-2xl border ${colorClasses.border} shadow-sm transition-all hover:scale-[1.01]`}>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className={`text-xs font-bold ${colorClasses.text}`}>{item.badge}</span>
+                        <span className="text-xs text-slate-400 font-mono">{item.timeSlot}</span>
+                      </div>
+                      <h3 className="font-bold text-slate-800 text-sm">
+                        {item.title}
+                      </h3>
+                      {item.description && (
+                        <p className="text-xs text-slate-500 mt-1">{item.description}</p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Quick Inquiry Direct Buttons inside Hero card */}

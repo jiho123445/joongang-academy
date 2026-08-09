@@ -35,6 +35,13 @@ export interface ConsultationForm {
   message: string;
 }
 
+export interface InquiryRecord extends ConsultationForm {
+  id: string;
+  createdAt: string; // ISO date string
+  status: '상담대기' | '상담완료' | '등록완료' | '보류';
+  adminNotes?: string;
+}
+
 export interface FAQItem {
   question: string;
   answer: string;

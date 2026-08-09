@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NOTICES_DATA } from '../data/coursesData';
 import { Notice } from '../types';
 import { Bell, Calendar, ChevronRight, X, AlertCircle } from 'lucide-react';
@@ -6,10 +6,32 @@ import { Bell, Calendar, ChevronRight, X, AlertCircle } from 'lucide-react';
 export const NoticeBoard: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
+  const [notices, setNotices] = useState<Notice[]>(NOTICES_DATA);
+
+  const fetchNotices = async () => {
+    try {
+      const res = await fetch('/api/notices');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        setNotices(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load board notices:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotices();
+    const handleUpdate = () => fetchNotices();
+    window.addEventListener('board_notices_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('board_notices_updated', handleUpdate);
+    };
+  }, []);
 
   const categories = ['전체', '모집안내', '시험일정', '국비지원', '학원소개'];
 
-  const filteredNotices = NOTICES_DATA.filter(
+  const filteredNotices = notices.filter(
     (n) => selectedCategory === '전체' || n.category === selectedCategory
   );
 

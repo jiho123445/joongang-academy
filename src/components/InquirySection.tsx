@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { ConsultationForm } from '../types';
 import { COURSES_DATA, ACADEMY_INFO } from '../data/coursesData';
-import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, Sparkles } from 'lucide-react';
+import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, Sparkles, FileSpreadsheet } from 'lucide-react';
 
 interface InquirySectionProps {
   preselectedCourse?: string;
+  onOpenAdminModal?: () => void;
 }
 
-export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCourse }) => {
+export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCourse, onOpenAdminModal }) => {
   const [formData, setFormData] = useState<ConsultationForm>({
     name: '',
     phone: '',
@@ -128,6 +129,20 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
               >
                 전화 바로 걸기 ({ACADEMY_INFO.phone})
               </a>
+
+              {/* Admin Data Management Button */}
+              {onOpenAdminModal && (
+                <div className="pt-2 border-t border-slate-200/80">
+                  <button
+                    type="button"
+                    onClick={onOpenAdminModal}
+                    className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all group"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span>신청 내역 관리 & 엑셀 다운로드 (원장님용)</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
