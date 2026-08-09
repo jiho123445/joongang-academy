@@ -123,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
                   id={`nav-${item.id}`}
-                  className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                     isActive
                       ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-200'
                       : 'text-slate-700 hover:text-blue-600 hover:bg-white/70'
@@ -221,7 +221,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left text-sm font-bold transition-colors ${
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left text-sm font-bold transition-colors cursor-pointer ${
                   activeSection === item.id
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-slate-800 hover:bg-white/60'
@@ -236,13 +236,13 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
           <div className="pt-2 grid grid-cols-2 gap-2">
             <button
               onClick={() => handleNavClick('inquiry')}
-              className="w-full py-3 bg-blue-600 text-white font-bold text-sm rounded-xl text-center shadow-lg shadow-blue-200"
+              className="w-full py-3 bg-blue-600 text-white font-bold text-sm rounded-xl text-center shadow-lg shadow-blue-200 cursor-pointer"
             >
               온라인 수강신청
             </button>
             <button
               onClick={onOpenAiModal}
-              className="w-full py-3 bg-slate-900 text-white font-bold text-sm rounded-xl text-center flex items-center justify-center gap-1.5 shadow"
+              className="w-full py-3 bg-slate-900 text-white font-bold text-sm rounded-xl text-center flex items-center justify-center gap-1.5 shadow cursor-pointer"
             >
               <Bot className="w-4 h-4 text-blue-400" />
               AI 수강 도우미

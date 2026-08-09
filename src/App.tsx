@@ -18,6 +18,11 @@ import { Footer } from './components/Footer';
 import { AiConsultantModal } from './components/AiConsultantModal';
 import { MobileQuickBar } from './components/MobileQuickBar';
 import { ChevronRight, CreditCard, FileText, MapPin, Award, Megaphone } from 'lucide-react';
+import {
+  subscribeApplicationsFromFirestore,
+  subscribeOpeningPopupFromFirestore,
+  DEFAULT_OPENING_POPUP,
+} from './lib/firestoreService';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<string>('home');
@@ -28,64 +33,25 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
 
   // Opening Notice Popup State
-  const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig | null>(null);
+  const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig | null>(DEFAULT_OPENING_POPUP);
   const [isNoticePopupOpen, setIsNoticePopupOpen] = useState<boolean>(false);
 
   // Pending Inquiries Count State for Admin Red Indicator
   const [pendingInquiryCount, setPendingInquiryCount] = useState<number>(0);
 
-  const fetchPendingInquiriesCount = async () => {
-    try {
-      const res = await fetch('/api/inquiries');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        const pending = data.data.filter((item: any) => item.status === '상담대기' || !item.status).length;
-        setPendingInquiryCount(pending);
-      }
-    } catch (err) {
-      console.error('Failed to fetch pending inquiries count:', err);
-    }
-  };
-
+  // Real-time Firestore Subscription for Applications Pending Count
   useEffect(() => {
-    fetchPendingInquiriesCount();
-    const interval = setInterval(fetchPendingInquiriesCount, 10000);
-
-    const handleInquirySubmitted = () => fetchPendingInquiriesCount();
-    const handleInquiryUpdated = () => fetchPendingInquiriesCount();
-
-    window.addEventListener('inquiry_submitted', handleInquirySubmitted);
-    window.addEventListener('inquiry_updated', handleInquiryUpdated);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('inquiry_submitted', handleInquirySubmitted);
-      window.removeEventListener('inquiry_updated', handleInquiryUpdated);
-    };
+    const unsubscribe = subscribeApplicationsFromFirestore((records) => {
+      const pending = records.filter((r) => r.status === '상담대기' || !r.status).length;
+      setPendingInquiryCount(pending);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const fallbackPopupNotice: PopupNoticeConfig = {
-    enabled: true,
-    badgeText: '2026년 하반기 신규 개강 안내',
-    title: '홍천 중앙정보처리학원 8~9월 수강생 모집',
-    subtitle: '국비지원 최대 100% 지원 & 1:1 맞춤 실습 교육',
-    content: '컴퓨터활용능력(1급/2급), 전산세무회계, 정보처리기능사/기사, GTQ/ITQ 자격증, 시니어 어르신 기초반 수강생을 모집합니다! 지금 신청하시고 국민내일배움카드 혜택을 받으세요.',
-    dateText: '개강일: 2026년 8월 ~ 9월 수시 개강 (오전/오후/야간반 운영)',
-    schedules: [
-      { courseName: '컴퓨터활용능력 (1급 / 2급)', startDate: '8월 18일 개강', timeSlot: '오전 10:00 / 야간 19:00' },
-      { courseName: '전산세무회계 (전산회계1급/세무2급)', startDate: '8월 25일 개강', timeSlot: '오후 14:00 / 야간 19:00' },
-      { courseName: '시니어 어르신 왕초보 컴퓨터&스마트폰', startDate: '8월 20일 개강', timeSlot: '오후 13:30 ~ 15:00' },
-      { courseName: '정보처리기능사 / GTQ 포토샵 자격증', startDate: '9월 01일 개강', timeSlot: '오후 15:30 / 야간 19:00' },
-    ],
-    actionText: '지금 온라인 수강신청하기',
-  };
-
-  const fetchNoticeConfig = async (forceShow = false) => {
-    try {
-      const res = await fetch('/api/popup-notice');
-      const data = await res.json();
-      const config = (data.success && data.data) ? data.data : fallbackPopupNotice;
-      setNoticeConfig(config);
+  // Real-time Firestore Subscription for Opening Popup (`settings/opening_popup`)
+  useEffect(() => {
+    const unsubscribe = subscribeOpeningPopupFromFirestore((cfg) => {
+      setNoticeConfig(cfg);
 
       let hiddenDate = null;
       try {
@@ -95,28 +61,16 @@ export default function App() {
       }
 
       const todayStr = new Date().toISOString().slice(0, 10);
-      
-      // KakaoTalk in-app browser or shared link detection
-      const isKakaoOrExternal = 
-        window.location.search.includes('kakao') || 
-        window.location.search.includes('utm_') || 
+      const isKakaoOrExternal =
+        window.location.search.includes('kakao') ||
+        window.location.search.includes('utm_') ||
         navigator.userAgent.toLowerCase().includes('kakaotalk') ||
         window.location.hash.includes('notice');
 
-      // If notice is enabled and (forceShow OR KakaoTalk shared link OR not hidden today)
-      if (config.enabled && (forceShow || isKakaoOrExternal || hiddenDate !== todayStr)) {
+      if (cfg.enabled && (isKakaoOrExternal || hiddenDate !== todayStr)) {
         setIsNoticePopupOpen(true);
       }
-    } catch (err) {
-      console.error('Failed to load popup notice:', err);
-      // Fallback popup display
-      setNoticeConfig(fallbackPopupNotice);
-      setIsNoticePopupOpen(true);
-    }
-  };
-
-  useEffect(() => {
-    fetchNoticeConfig();
+    });
 
     const handleNoticeUpdated = () => {
       try {
@@ -124,11 +78,14 @@ export default function App() {
       } catch (e) {
         console.warn('localStorage clear failed:', e);
       }
-      fetchNoticeConfig(true);
+      setIsNoticePopupOpen(true);
     };
 
     window.addEventListener('notice_popup_updated', handleNoticeUpdated);
-    return () => window.removeEventListener('notice_popup_updated', handleNoticeUpdated);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('notice_popup_updated', handleNoticeUpdated);
+    };
   }, []);
 
   const handleHideToday = () => {
@@ -168,11 +125,7 @@ export default function App() {
 
     // Open opening notice popup modal when Home button/logo is clicked
     if (pageId === 'home' || pageId === 'hero') {
-      if (noticeConfig && noticeConfig.enabled) {
-        setIsNoticePopupOpen(true);
-      } else {
-        fetchNoticeConfig(true);
-      }
+      setIsNoticePopupOpen(true);
     }
   };
 
@@ -408,7 +361,7 @@ export default function App() {
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}
         onNoticeUpdated={() => {
-          fetchNoticeConfig(true);
+          setIsNoticePopupOpen(true);
         }}
       />
 

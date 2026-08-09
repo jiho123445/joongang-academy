@@ -58,7 +58,7 @@ export const CourseExplorer: React.FC<CourseExplorerProps> = ({
               <button
                 key={cat}
                 onClick={() => onSelectCategory(cat)}
-                className={`px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all ${
+                className={`px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm whitespace-nowrap transition-all cursor-pointer ${
                   selectedCategory === cat
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
                     : 'bg-white/60 text-slate-700 hover:bg-white border border-white/40'
@@ -177,13 +177,13 @@ export const CourseExplorer: React.FC<CourseExplorerProps> = ({
                 <div className="mt-6 pt-4 border-t border-slate-200/60 grid grid-cols-2 gap-2">
                   <button
                     onClick={() => onOpenDetailModal(course)}
-                    className="w-full py-2.5 px-3 bg-white/70 hover:bg-white text-slate-700 font-bold text-xs rounded-xl border border-white/80 transition-all text-center shadow-sm"
+                    className="w-full py-2.5 px-3 bg-white/70 hover:bg-white text-slate-700 font-bold text-xs rounded-xl border border-white/80 transition-all text-center shadow-sm cursor-pointer"
                   >
                     커리큘럼 보기
                   </button>
                   <button
                     onClick={() => onSelectCourseForInquiry(course.title)}
-                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition-all text-center shadow-md shadow-blue-200"
+                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition-all text-center shadow-md shadow-blue-200 cursor-pointer"
                   >
                     수강 문의하기
                   </button>

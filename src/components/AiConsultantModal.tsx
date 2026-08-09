@@ -103,7 +103,7 @@ export const AiConsultantModal: React.FC<AiConsultantModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10 transition-colors"
+            className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -116,7 +116,7 @@ export const AiConsultantModal: React.FC<AiConsultantModalProps> = ({
             <button
               key={cat}
               onClick={() => setUserCategory(cat)}
-              className={`px-3 py-1 rounded-full transition-all whitespace-nowrap ${
+              className={`px-3 py-1 rounded-full transition-all whitespace-nowrap cursor-pointer ${
                 userCategory === cat
                   ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-200'
                   : 'bg-white/80 border border-slate-200/80 text-slate-700 hover:bg-white'

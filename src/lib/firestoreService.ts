@@ -1,0 +1,689 @@
+import {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  serverTimestamp,
+  writeBatch,
+  Timestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
+import { InquiryRecord, Notice } from "../types";
+import { ScheduleItem, PopupNoticeConfig } from "../components/NoticePopupModal";
+import { PopularCourseAdminItem } from "../components/InquiryAdminModal";
+
+// Error Logger Helper
+function handleFirestoreError(error: unknown, actionName: string) {
+  console.error(`Firestore Error [${actionName}]:`, error);
+  const msg = error instanceof Error ? error.message : String(error);
+  throw new Error(`[Firestore ${actionName}] ${msg}`);
+}
+
+// Helper to format timestamps to YYYY-MM-DD or ISO
+export function formatFirestoreTimestamp(val: any): string {
+  if (!val) return new Date().toISOString().slice(0, 10);
+  if (typeof val === 'string') return val;
+  if (val instanceof Timestamp) return val.toDate().toISOString().slice(0, 10);
+  if (val.toDate && typeof val.toDate === 'function') return val.toDate().toISOString().slice(0, 10);
+  if (val.seconds) return new Date(val.seconds * 1000).toISOString().slice(0, 10);
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Helper to extract YYMM string from an ISO date string or Date
+export function getYYMMKey(dateInput?: string | Date | null): string {
+  const d = dateInput ? new Date(dateInput) : new Date();
+  if (isNaN(d.getTime())) {
+    const now = new Date();
+    const yy = now.getFullYear().toString().slice(-2);
+    const mm = (now.getMonth() + 1).toString().padStart(2, '0');
+    return `${yy}${mm}`;
+  }
+  const yy = d.getFullYear().toString().slice(-2);
+  const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+  return `${yy}${mm}`;
+}
+
+// Format receipt numbers as YYMM-N (e.g., 2608-1, 2608-2). Resets sequence when year or month changes.
+export function formatReceiptNumber(
+  idOrRecord: string | InquiryRecord,
+  createdAt?: string,
+  allRecords?: InquiryRecord[]
+): string {
+  if (!idOrRecord) {
+    return `${getYYMMKey()}-1`;
+  }
+
+  let id = typeof idOrRecord === 'string' ? idOrRecord : idOrRecord.id;
+  let receiptNum = typeof idOrRecord === 'object' ? idOrRecord.receiptNumber : undefined;
+  let itemCreatedAt = typeof idOrRecord === 'object' ? idOrRecord.createdAt : createdAt;
+
+  // If receiptNum or id is already formatted as YYMM-N (e.g. 2608-1)
+  if (receiptNum && /^\d{4}-\d+$/.test(receiptNum)) {
+    return receiptNum;
+  }
+  if (id && /^\d{4}-\d+$/.test(id)) {
+    return id;
+  }
+
+  const targetYYMM = getYYMMKey(itemCreatedAt);
+
+  if (allRecords && allRecords.length > 0) {
+    // Filter records belonging to the same YYMM month
+    const sameMonthRecords = allRecords.filter((r) => getYYMMKey(r.createdAt) === targetYYMM);
+
+    // Sort chronologically ascending (oldest first)
+    sameMonthRecords.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime() || 0;
+      const timeB = new Date(b.createdAt).getTime() || 0;
+      if (timeA !== timeB) return timeA - timeB;
+      return (a.id || '').localeCompare(b.id || '');
+    });
+
+    const index = sameMonthRecords.findIndex((r) => r.id === id);
+    if (index !== -1) {
+      return `${targetYYMM}-${index + 1}`;
+    }
+  }
+
+  return `${targetYYMM}-1`;
+}
+
+// =========================================================================
+// 1. APPLICATIONS COLLECTION (`applications`)
+// =========================================================================
+
+export async function submitApplicationToFirestore(data: {
+  name: string;
+  phone: string;
+  courseInterest: string;
+  preferredTime: string;
+  hasNaeilCard: string;
+  userCategory: string;
+  message: string;
+}): Promise<InquiryRecord> {
+  // Ultra-fast timeout for instant user feedback and quick form reset
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error("Firestore request timeout")), 600);
+  });
+
+  const now = new Date();
+  const targetYYMM = getYYMMKey(now);
+
+  let nextSeq = 1;
+  try {
+    const colRef = collection(db, "applications");
+    const snap = await getDocs(colRef);
+    const monthDocs = snap.docs.filter((d) => {
+      const docData = d.data();
+      const docDate = docData.createdAtIso || formatFirestoreTimestamp(docData.createdAt);
+      return getYYMMKey(docDate) === targetYYMM;
+    });
+    nextSeq = monthDocs.length + 1;
+  } catch (e) {
+    console.warn("Month count query failed:", e);
+  }
+
+  const receiptId = `${targetYYMM}-${nextSeq}`;
+
+  try {
+    const colRef = collection(db, "applications");
+    const docData = {
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      course: data.courseInterest || "상담 후 결정",
+      courseInterest: data.courseInterest || "상담 후 결정",
+      preferredTime: data.preferredTime || "상관없음",
+      hasNaeilCard: data.hasNaeilCard || "유",
+      userCategory: data.userCategory || "취업준비생",
+      memo: data.message ? data.message.trim() : "",
+      message: data.message ? data.message.trim() : "",
+      status: "상담대기",
+      adminNotes: "",
+      receiptNumber: receiptId,
+      createdAt: serverTimestamp(),
+      createdAtIso: now.toISOString(),
+    };
+
+    const docRef = await Promise.race([addDoc(colRef, docData), timeoutPromise]);
+    const newRecord: InquiryRecord = {
+      id: docRef.id || receiptId,
+      receiptNumber: receiptId,
+      name: docData.name,
+      phone: docData.phone,
+      courseInterest: docData.courseInterest,
+      preferredTime: docData.preferredTime as any,
+      hasNaeilCard: docData.hasNaeilCard as any,
+      userCategory: docData.userCategory as any,
+      message: docData.message,
+      createdAt: docData.createdAtIso,
+      status: "상담대기",
+      adminNotes: "",
+    };
+    return newRecord;
+  } catch (err) {
+    console.warn("submitApplicationToFirestore online write timed out or encountered an issue, fast fallback record generated:", err);
+    return {
+      id: receiptId,
+      receiptNumber: receiptId,
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      courseInterest: data.courseInterest || "상담 후 결정",
+      preferredTime: (data.preferredTime || "상관없음") as any,
+      hasNaeilCard: (data.hasNaeilCard || "유") as any,
+      userCategory: (data.userCategory || "취업준비생") as any,
+      message: data.message ? data.message.trim() : "",
+      createdAt: now.toISOString(),
+      status: "상담대기",
+      adminNotes: "",
+    };
+  }
+}
+
+export function subscribeApplicationsFromFirestore(
+  onUpdate: (records: InquiryRecord[]) => void
+): () => void {
+  const colRef = collection(db, "applications");
+  const q = query(colRef, orderBy("createdAt", "desc"));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const records: InquiryRecord[] = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          receiptNumber: data.receiptNumber || undefined,
+          name: data.name || "",
+          phone: data.phone || "",
+          courseInterest: data.courseInterest || data.course || "상담 후 결정",
+          preferredTime: data.preferredTime || "상관없음",
+          hasNaeilCard: data.hasNaeilCard || "유",
+          userCategory: data.userCategory || "취업준비생",
+          message: data.message || data.memo || "",
+          createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
+          status: data.status || "상담대기",
+          adminNotes: data.adminNotes || "",
+        };
+      });
+      onUpdate(records);
+    },
+    (error) => {
+      console.warn("Applications listener query with orderby failed, trying fallback scan:", error);
+      // Fallback listener without orderBy if index is building
+      onSnapshot(colRef, (snapshot) => {
+        const records: InquiryRecord[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            receiptNumber: data.receiptNumber || undefined,
+            name: data.name || "",
+            phone: data.phone || "",
+            courseInterest: data.courseInterest || data.course || "상담 후 결정",
+            preferredTime: data.preferredTime || "상관없음",
+            hasNaeilCard: data.hasNaeilCard || "유",
+            userCategory: data.userCategory || "취업준비생",
+            message: data.message || data.memo || "",
+            createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
+            status: data.status || "상담대기",
+            adminNotes: data.adminNotes || "",
+          };
+        });
+        records.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+        onUpdate(records);
+      });
+    }
+  );
+}
+
+export async function updateApplicationStatusInFirestore(
+  docId: string,
+  status?: '상담대기' | '상담완료' | '등록완료' | '보류',
+  adminNotes?: string
+): Promise<void> {
+  try {
+    const docRef = doc(db, "applications", docId);
+    const updatePayload: Record<string, any> = {
+      updatedAt: serverTimestamp(),
+    };
+    if (status) updatePayload.status = status;
+    if (adminNotes !== undefined) {
+      updatePayload.adminNotes = adminNotes;
+      updatePayload.memo = adminNotes;
+    }
+    await updateDoc(docRef, updatePayload);
+  } catch (err) {
+    handleFirestoreError(err, "updateApplicationStatusInFirestore");
+  }
+}
+
+export async function deleteApplicationFromFirestore(docId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "applications", docId));
+  } catch (err) {
+    handleFirestoreError(err, "deleteApplicationFromFirestore");
+  }
+}
+
+export async function batchDeleteApplicationsFromFirestore(ids: string[]): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    ids.forEach((id) => {
+      batch.delete(doc(db, "applications", id));
+    });
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, "batchDeleteApplicationsFromFirestore");
+  }
+}
+
+
+// =========================================================================
+// 2. SETTINGS / OPENING POPUP (`settings/opening_popup`)
+// =========================================================================
+
+export const DEFAULT_OPENING_POPUP: PopupNoticeConfig = {
+  enabled: true,
+  badgeText: "2026년 하반기 신규 개강 안내",
+  title: "홍천 중앙정보처리학원 8~9월 수강생 모집",
+  subtitle: "국비지원 최대 100% 지원 & 1:1 맞춤 실습 교육",
+  content:
+    "컴퓨터활용능력(1급/2급), 전산세무회계, 정보처리기능사/기사, GTQ/ITQ 자격증, 시니어 어르신 기초반 수강생을 모집합니다! 지금 신청하시고 국민내일배움카드 혜택을 받으세요.",
+  dateText: "개강일: 2026년 8월 ~ 9월 수시 개강 (오전/오후/야간반 운영)",
+  schedules: [
+    { courseName: "컴퓨터활용능력 (1급 / 2급)", startDate: "8월 18일 개강", timeSlot: "오전 10:00 / 야간 19:00" },
+    { courseName: "전산세무회계 (전산회계1급/세무2급)", startDate: "8월 25일 개강", timeSlot: "오후 14:00 / 야간 19:00" },
+    { courseName: "시니어 어르신 왕초보 컴퓨터&스마트폰", startDate: "8월 20일 개강", timeSlot: "오후 13:30 ~ 15:00" },
+    { courseName: "정보처리기능사 / GTQ 포토샵 자격증", startDate: "9월 01일 개강", timeSlot: "오후 15:30 / 야간 19:00" },
+  ],
+  actionText: "지금 온라인 수강신청하기",
+};
+
+export function subscribeOpeningPopupFromFirestore(
+  onUpdate: (config: PopupNoticeConfig) => void
+): () => void {
+  const docRef = doc(db, "settings", "opening_popup");
+
+  return onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        const config: PopupNoticeConfig = {
+          enabled: typeof data.isVisible === "boolean" ? data.isVisible : data.enabled ?? true,
+          badgeText: data.badgeText || DEFAULT_OPENING_POPUP.badgeText,
+          title: data.title || DEFAULT_OPENING_POPUP.title,
+          subtitle: data.subtitle || DEFAULT_OPENING_POPUP.subtitle,
+          content: data.content || DEFAULT_OPENING_POPUP.content,
+          dateText: data.scheduleSummary || data.dateText || DEFAULT_OPENING_POPUP.dateText,
+          schedules: Array.isArray(data.schedules) ? data.schedules : DEFAULT_OPENING_POPUP.schedules,
+          actionText: data.actionText || DEFAULT_OPENING_POPUP.actionText,
+        };
+        onUpdate(config);
+      } else {
+        // Doc doesn't exist yet, return default and initialize in Firestore
+        onUpdate(DEFAULT_OPENING_POPUP);
+        saveOpeningPopupToFirestore(DEFAULT_OPENING_POPUP).catch((e) =>
+          console.warn("Auto-seeding opening_popup failed:", e)
+        );
+      }
+    },
+    (err) => {
+      console.error("subscribeOpeningPopupFromFirestore error:", err);
+      onUpdate(DEFAULT_OPENING_POPUP);
+    }
+  );
+}
+
+export async function saveOpeningPopupToFirestore(config: PopupNoticeConfig): Promise<void> {
+  try {
+    const docRef = doc(db, "settings", "opening_popup");
+    const payload = {
+      isVisible: Boolean(config.enabled),
+      enabled: Boolean(config.enabled),
+      badgeText: config.badgeText || "",
+      title: config.title || "",
+      subtitle: config.subtitle || "",
+      content: config.content || "",
+      scheduleSummary: config.dateText || "",
+      dateText: config.dateText || "",
+      schedules: Array.isArray(config.schedules) ? config.schedules : [],
+      actionText: config.actionText || "지금 온라인 수강신청하기",
+      updatedAt: serverTimestamp(),
+    };
+    await setDoc(docRef, payload, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, "saveOpeningPopupToFirestore");
+  }
+}
+
+
+// =========================================================================
+// 3. NOTICES COLLECTION (`notices`)
+// =========================================================================
+
+export const DEFAULT_NOTICES: Notice[] = [
+  {
+    id: "notice-default-1",
+    title: "2026년도 국민내일배움카드 국비지원 과정 신규 수강생 모집 안내",
+    date: "2026-08-01",
+    category: "국비지원",
+    content:
+      "2026년 하반기 국민내일배움카드 국비지원 신규 과정을 개강합니다.\n- 대상: 구직자, 재직자, 졸업예정자, 영세자영업자\n- 개강 과정: 컴퓨터활용능력 2급/1급, 전산세무회계, 사무자동화(OA)\n- 혜택: 훈련비 최대 100% 지원 및 출석율에 따른 매월 훈련장려금 지급\n- 문의: 033-433-1926 ~ 7 (학원 방문 및 전화 상담 환영)",
+    important: true,
+  },
+  {
+    id: "notice-default-2",
+    title: "제8회 대한상공회의소 컴활 / ITQ 국가기술자격시험 시험일정 및 원서접수",
+    date: "2026-07-25",
+    category: "시험일정",
+    content:
+      "대한상공회의소 및 한국생산성본부 주관 자격시험 일정 안내입니다.\n본 학원은 상시시험 지정 시험장 연습 장비와 동일한 사양의 PC로 교육을 진행하고 있습니다.\n원서 접수 대행 및 1:1 기출 체크를 지원해 드립니다.",
+    important: true,
+  },
+  {
+    id: "notice-default-3",
+    title: "홍천 중앙정보처리학원 모바일 겸용 반응형 홈페이지 리뉴얼 오픈!",
+    date: "2026-07-15",
+    category: "학원소개",
+    content:
+      "스마트폰과 태블릿, PC 어디서나 편리하게 수강정보를 확인하고 간편하게 수강 문의를 신청할 수 있도록 홈페이지가 개편되었습니다.\n많은 이용 부탁드립니다.",
+    important: false,
+  },
+];
+
+export function subscribeNoticesFromFirestore(
+  onUpdate: (notices: Notice[]) => void
+): () => void {
+  const colRef = collection(db, "notices");
+  const q = query(colRef, orderBy("createdAt", "desc"));
+
+  const parseSnapshot = (snapshot: any) => {
+    if (snapshot.empty) {
+      // Seed defaults if empty
+      seedDefaultNotices().catch(console.error);
+      return DEFAULT_NOTICES;
+    }
+    return snapshot.docs.map((d: any) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        title: data.title || "",
+        category: data.category || "공지",
+        content: data.content || "",
+        important: Boolean(data.important),
+        date: data.date || formatFirestoreTimestamp(data.createdAt),
+        attachedFiles: Array.isArray(data.attachedFiles) ? data.attachedFiles : [],
+      } as Notice;
+    });
+  };
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      onUpdate(parseSnapshot(snapshot));
+    },
+    (err) => {
+      console.warn("Notices query with orderBy failed, fallback to unordered:", err);
+      onSnapshot(colRef, (snapshot) => {
+        const notices = parseSnapshot(snapshot);
+        onUpdate(notices);
+      });
+    }
+  );
+}
+
+async function seedDefaultNotices() {
+  const colRef = collection(db, "notices");
+  for (const n of DEFAULT_NOTICES) {
+    await addDoc(colRef, {
+      title: n.title,
+      category: n.category,
+      content: n.content,
+      important: Boolean(n.important),
+      date: n.date,
+      attachedFiles: [],
+      createdAt: serverTimestamp(),
+    });
+  }
+}
+
+export async function addNoticeToFirestore(data: {
+  title: string;
+  category: string;
+  content: string;
+  date?: string;
+  important?: boolean;
+  attachedFiles?: string[];
+}): Promise<void> {
+  try {
+    const colRef = collection(db, "notices");
+    await addDoc(colRef, {
+      title: data.title.trim(),
+      category: data.category || "공지",
+      content: data.content.trim(),
+      important: Boolean(data.important),
+      date: data.date || new Date().toISOString().slice(0, 10),
+      attachedFiles: data.attachedFiles || [],
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, "addNoticeToFirestore");
+  }
+}
+
+export async function updateNoticeInFirestore(
+  id: string,
+  data: {
+    title?: string;
+    category?: string;
+    content?: string;
+    date?: string;
+    important?: boolean;
+    attachedFiles?: string[];
+  }
+): Promise<void> {
+  try {
+    const docRef = doc(db, "notices", id);
+    const updatePayload: Record<string, any> = {
+      updatedAt: serverTimestamp(),
+    };
+    if (data.title !== undefined) updatePayload.title = data.title;
+    if (data.category !== undefined) updatePayload.category = data.category;
+    if (data.content !== undefined) updatePayload.content = data.content;
+    if (data.date !== undefined) updatePayload.date = data.date;
+    if (data.important !== undefined) updatePayload.important = data.important;
+    if (data.attachedFiles !== undefined) updatePayload.attachedFiles = data.attachedFiles;
+
+    await updateDoc(docRef, updatePayload);
+  } catch (err) {
+    handleFirestoreError(err, "updateNoticeInFirestore");
+  }
+}
+
+export async function deleteNoticeFromFirestore(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "notices", id));
+  } catch (err) {
+    handleFirestoreError(err, "deleteNoticeFromFirestore");
+  }
+}
+
+
+// =========================================================================
+// 4. POPULAR COURSES COLLECTION (`popular_courses`)
+// =========================================================================
+
+export const DEFAULT_POPULAR_COURSES: PopularCourseAdminItem[] = [
+  {
+    id: "pop-default-1",
+    badge: "모집중 · 국비지원",
+    badgeColor: "blue",
+    timeSlot: "09:30 - 12:30",
+    startDate: "2026-09-01 개강",
+    title: "컴퓨터활용능력 1급/2급 (실기)",
+    description: "자부담금 0원~최대 100% 정부지원",
+  },
+  {
+    id: "pop-default-2",
+    badge: "모집중 · 인기",
+    badgeColor: "emerald",
+    timeSlot: "14:00 - 17:00",
+    startDate: "2026-09-01 개강",
+    title: "전산세무회계 & KcLep 실무",
+    description: "회계원리부터 세무 신고 실무 원스톱",
+  },
+  {
+    id: "pop-default-3",
+    badge: "추천 · 오전반",
+    badgeColor: "amber",
+    timeSlot: "10:00 - 12:00",
+    startDate: "수시 개강",
+    title: "어르신 스마트폰 & 타자·컴퓨터 기초",
+    description: "친절한 1:1 눈높이 특별지도",
+  },
+];
+
+export function subscribePopularCoursesFromFirestore(
+  onUpdate: (courses: PopularCourseAdminItem[]) => void
+): () => void {
+  const colRef = collection(db, "popular_courses");
+
+  const parseDocs = (snapshot: any) => {
+    if (snapshot.empty) {
+      seedDefaultPopularCourses().catch(console.error);
+      return DEFAULT_POPULAR_COURSES;
+    }
+    const items = snapshot.docs.map((d: any, idx: number) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        title: data.courseTitle || data.title || "",
+        courseTitle: data.courseTitle || data.title || "",
+        description: data.description || "",
+        badge: data.tag || data.badge || "모집중",
+        badgeColor: data.badgeColor || "blue",
+        timeSlot: data.timeSlot || "시간 문의",
+        startDate: data.startDate || "수시 개강",
+        isPopular: typeof data.isPopular === "boolean" ? data.isPopular : true,
+        order: typeof data.order === "number" ? data.order : idx,
+      };
+    });
+    items.sort((a: any, b: any) => a.order - b.order);
+    return items;
+  };
+
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      onUpdate(parseDocs(snapshot));
+    },
+    (err) => {
+      console.error("subscribePopularCoursesFromFirestore error:", err);
+      onUpdate(DEFAULT_POPULAR_COURSES);
+    }
+  );
+}
+
+async function seedDefaultPopularCourses() {
+  const colRef = collection(db, "popular_courses");
+  for (let idx = 0; idx < DEFAULT_POPULAR_COURSES.length; idx++) {
+    const c = DEFAULT_POPULAR_COURSES[idx];
+    await addDoc(colRef, {
+      courseTitle: c.title,
+      title: c.title,
+      description: c.description,
+      tag: c.badge,
+      badge: c.badge,
+      badgeColor: c.badgeColor || "blue",
+      timeSlot: c.timeSlot,
+      startDate: c.startDate,
+      isPopular: true,
+      order: idx,
+      updatedAt: serverTimestamp(),
+    });
+  }
+}
+
+export async function addPopularCourseToFirestore(data: {
+  title: string;
+  description: string;
+  badge?: string;
+  badgeColor?: string;
+  timeSlot?: string;
+  startDate?: string;
+  isPopular?: boolean;
+  order?: number;
+}): Promise<void> {
+  try {
+    const colRef = collection(db, "popular_courses");
+    await addDoc(colRef, {
+      courseTitle: data.title.trim(),
+      title: data.title.trim(),
+      description: data.description ? data.description.trim() : "",
+      tag: data.badge || "모집중",
+      badge: data.badge || "모집중",
+      badgeColor: data.badgeColor || "blue",
+      timeSlot: data.timeSlot || "시간 문의",
+      startDate: data.startDate || "수시 개강",
+      isPopular: typeof data.isPopular === "boolean" ? data.isPopular : true,
+      order: typeof data.order === "number" ? data.order : Date.now(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, "addPopularCourseToFirestore");
+  }
+}
+
+export async function updatePopularCourseInFirestore(
+  id: string,
+  data: {
+    title?: string;
+    description?: string;
+    badge?: string;
+    badgeColor?: string;
+    timeSlot?: string;
+    startDate?: string;
+    isPopular?: boolean;
+    order?: number;
+  }
+): Promise<void> {
+  try {
+    const docRef = doc(db, "popular_courses", id);
+    const updatePayload: Record<string, any> = {
+      updatedAt: serverTimestamp(),
+    };
+    if (data.title !== undefined) {
+      updatePayload.courseTitle = data.title;
+      updatePayload.title = data.title;
+    }
+    if (data.description !== undefined) updatePayload.description = data.description;
+    if (data.badge !== undefined) {
+      updatePayload.tag = data.badge;
+      updatePayload.badge = data.badge;
+    }
+    if (data.badgeColor !== undefined) updatePayload.badgeColor = data.badgeColor;
+    if (data.timeSlot !== undefined) updatePayload.timeSlot = data.timeSlot;
+    if (data.startDate !== undefined) updatePayload.startDate = data.startDate;
+    if (data.isPopular !== undefined) updatePayload.isPopular = data.isPopular;
+    if (data.order !== undefined) updatePayload.order = data.order;
+
+    await updateDoc(docRef, updatePayload);
+  } catch (err) {
+    handleFirestoreError(err, "updatePopularCourseInFirestore");
+  }
+}
+
+export async function deletePopularCourseFromFirestore(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "popular_courses", id));
+  } catch (err) {
+    handleFirestoreError(err, "deletePopularCourseFromFirestore");
+  }
+}

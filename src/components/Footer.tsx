@@ -77,32 +77,32 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             <h4 className="font-bold text-white text-sm uppercase mb-3 tracking-wider">빠른 이동</h4>
             <ul className="space-y-1.5 text-xs font-medium text-slate-300">
               <li>
-                <button onClick={() => onNavigate('courses')} className="hover:text-blue-300 transition-colors">
+                <button onClick={() => onNavigate('courses')} className="hover:text-blue-300 transition-colors cursor-pointer">
                   교육과정 (컴활/전산세무)
                 </button>
               </li>
               <li>
-                <button onClick={() => onNavigate('national-support')} className="hover:text-blue-300 transition-colors">
+                <button onClick={() => onNavigate('national-support')} className="hover:text-blue-300 transition-colors cursor-pointer">
                   국민내일배움카드 안내
                 </button>
               </li>
               <li>
-                <button onClick={() => onNavigate('intro')} className="hover:text-blue-300 transition-colors">
+                <button onClick={() => onNavigate('intro')} className="hover:text-blue-300 transition-colors cursor-pointer">
                   학원 소개 & 원장 인사말
                 </button>
               </li>
               <li>
-                <button onClick={() => onNavigate('notices')} className="hover:text-blue-300 transition-colors">
+                <button onClick={() => onNavigate('notices')} className="hover:text-blue-300 transition-colors cursor-pointer">
                   공지사항 & 시험일정
                 </button>
               </li>
               <li>
-                <button onClick={() => onNavigate('inquiry')} className="hover:text-blue-300 transition-colors">
+                <button onClick={() => onNavigate('inquiry')} className="hover:text-blue-300 transition-colors cursor-pointer">
                   온라인 수강 문의
                 </button>
               </li>
               <li>
-                <button onClick={() => onNavigate('location')} className="hover:text-blue-300 transition-colors">
+                <button onClick={() => onNavigate('location')} className="hover:text-blue-300 transition-colors cursor-pointer">
                   오시는 길 (약도)
                 </button>
               </li>

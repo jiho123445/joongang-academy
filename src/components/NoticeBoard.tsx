@@ -1,32 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { NOTICES_DATA } from '../data/coursesData';
 import { Notice } from '../types';
 import { Bell, Calendar, ChevronRight, X, AlertCircle } from 'lucide-react';
+import { subscribeNoticesFromFirestore } from '../lib/firestoreService';
 
 export const NoticeBoard: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
-  const [notices, setNotices] = useState<Notice[]>(NOTICES_DATA);
-
-  const fetchNotices = async () => {
-    try {
-      const res = await fetch('/api/notices');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setNotices(data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load board notices:', err);
-    }
-  };
+  const [notices, setNotices] = useState<Notice[]>([]);
 
   useEffect(() => {
-    fetchNotices();
-    const handleUpdate = () => fetchNotices();
-    window.addEventListener('board_notices_updated', handleUpdate);
-    return () => {
-      window.removeEventListener('board_notices_updated', handleUpdate);
-    };
+    const unsubscribe = subscribeNoticesFromFirestore((data) => {
+      setNotices(data);
+    });
+    return () => unsubscribe();
   }, []);
 
   const categories = ['전체', '모집안내', '시험일정', '국비지원', '학원소개'];
@@ -59,7 +45,7 @@ export const NoticeBoard: React.FC = () => {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold transition-all ${
+              className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                 selectedCategory === cat
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
                   : 'bg-white/60 backdrop-blur-md text-slate-700 border border-white/80 hover:bg-white'
@@ -131,7 +117,7 @@ export const NoticeBoard: React.FC = () => {
                 </div>
                 <button
                   onClick={() => setSelectedNotice(null)}
-                  className="p-2 text-slate-400 hover:text-slate-800 rounded-full hover:bg-slate-100 transition-colors"
+                  className="p-2 text-slate-400 hover:text-slate-800 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -144,7 +130,7 @@ export const NoticeBoard: React.FC = () => {
               <div className="flex justify-end">
                 <button
                   onClick={() => setSelectedNotice(null)}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-full shadow-md shadow-blue-200 transition-all"
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-full shadow-md shadow-blue-200 transition-all cursor-pointer"
                 >
                   확인
                 </button>
