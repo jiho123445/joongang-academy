@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { InquiryRecord, Notice } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import {
   X,
   Download,
@@ -41,6 +42,8 @@ export interface PopularCourseAdminItem {
   badge: string;
   badgeColor?: string;
   timeSlot: string;
+  startDate?: string;
+  createdAt?: string;
   title: string;
   description: string;
 }
@@ -88,6 +91,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [popFormBadge, setPopFormBadge] = useState<string>('모집중 · 국비지원');
   const [popFormBadgeColor, setPopFormBadgeColor] = useState<string>('blue');
   const [popFormTimeSlot, setPopFormTimeSlot] = useState<string>('09:30 - 12:30');
+  const [popFormStartDate, setPopFormStartDate] = useState<string>('2026-09-01 개강');
   const [popFormDescription, setPopFormDescription] = useState<string>('');
   const [popSuccessMsg, setPopSuccessMsg] = useState<string>('');
 
@@ -119,6 +123,36 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   });
   const [savingNotice, setSavingNotice] = useState<boolean>(false);
   const [noticeSuccessMsg, setNoticeSuccessMsg] = useState<string>('');
+
+  // Custom In-App Confirmation Dialog State (Replaces native window.confirm to work in sandboxed iframes)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: '삭제하기',
+    onConfirm: () => {},
+  });
+
+  const requestConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    confirmText = '삭제하기'
+  ) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      confirmText,
+      onConfirm,
+    });
+  };
 
   const fetchInquiries = async () => {
     setLoading(true);
@@ -173,7 +207,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       ? [...noticeConfig.schedules]
       : [...defaultSchedules];
 
-    currentSchedules.push({ courseName: '', startDate: '', timeSlot: '' });
+    currentSchedules.unshift({ courseName: '', startDate: '', timeSlot: '' });
 
     setNoticeConfig((prev) => ({
       ...prev,
@@ -182,11 +216,35 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   };
 
   const handleRemoveScheduleRow = (index: number) => {
-    const currentSchedules = (noticeConfig.schedules || []).filter((_, i) => i !== index);
-    setNoticeConfig((prev) => ({
-      ...prev,
-      schedules: currentSchedules,
-    }));
+    const item = (noticeConfig.schedules || [])[index];
+    const courseTitle = item?.courseName ? item.courseName : '선택한 항목';
+
+    requestConfirm(
+      '개강 과정 삭제 확인',
+      `[${courseTitle}] 개강 과정 항목을 정말 삭제하시겠습니까?`,
+      async () => {
+        const currentSchedules = (noticeConfig.schedules || []).filter((_, i) => i !== index);
+        const updatedConfig = { ...noticeConfig, schedules: currentSchedules };
+        setNoticeConfig(updatedConfig);
+
+        try {
+          const res = await fetch('/api/popup-notice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedConfig),
+          });
+          const data = await res.json();
+          if (data.success) {
+            setNoticeSuccessMsg('개강 과정 항목이 삭제되고 실시간으로 반영되었습니다.');
+            window.dispatchEvent(new Event('notice_popup_updated'));
+            if (onNoticeUpdated) onNoticeUpdated();
+            setTimeout(() => setNoticeSuccessMsg(''), 4000);
+          }
+        } catch (err) {
+          console.error('Failed to auto-save schedule deletion:', err);
+        }
+      }
+    );
   };
 
   const handleResetSchedules = () => {
@@ -236,7 +294,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     }
 
     try {
-      const url = editingBoardNotice ? `/api/notices/${editingBoardNotice.id}` : '/api/notices';
+      const url = editingBoardNotice ? `/api/notices/${encodeURIComponent(editingBoardNotice.id)}` : '/api/notices';
       const method = editingBoardNotice ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -266,23 +324,29 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     }
   };
 
-  const handleDeleteBoardNoticeItem = async (id: string, title: string) => {
-    if (!window.confirm(`[${title}] 공지사항을 정말 삭제하시겠습니까?`)) return;
-
-    try {
-      const res = await fetch(`/api/notices/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        fetchBoardNotices();
-        window.dispatchEvent(new Event('board_notices_updated'));
-        setBoardNoticeSuccessMsg('공지사항이 삭제되었습니다.');
-        setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
-      } else {
-        alert(data.error || '삭제 실패');
+  const handleDeleteBoardNoticeItem = (id: string, title: string) => {
+    requestConfirm(
+      '공지사항 삭제 확인',
+      `[${title}]\n\n이 공지사항 항목을 정말 삭제하시겠습니까?`,
+      async () => {
+        try {
+          const res = await fetch(`/api/notices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.success) {
+            setBoardNotices((prev) => prev.filter((item) => String(item.id) !== String(id)));
+            fetchBoardNotices();
+            window.dispatchEvent(new Event('board_notices_updated'));
+            setBoardNoticeSuccessMsg('공지사항이 삭제되었으며 홈페이지에 실시간 반영되었습니다.');
+            setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
+          } else {
+            setBoardNoticeSuccessMsg(data.error || '삭제 중 오류가 발생했습니다.');
+            setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
+          }
+        } catch (err) {
+          console.error('Failed to delete notice item:', err);
+        }
       }
-    } catch (err) {
-      alert('삭제 중 오류가 발생했습니다.');
-    }
+    );
   };
 
   const fetchPopularCoursesAdmin = async () => {
@@ -303,6 +367,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     setPopFormBadge('모집중 · 국비지원');
     setPopFormBadgeColor('blue');
     setPopFormTimeSlot('09:30 - 12:30');
+    setPopFormStartDate('2026-09-01 개강');
     setPopFormDescription('');
     setIsPopFormOpen(true);
   };
@@ -313,6 +378,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     setPopFormBadge(item.badge);
     setPopFormBadgeColor(item.badgeColor || 'blue');
     setPopFormTimeSlot(item.timeSlot);
+    setPopFormStartDate(item.startDate || '수시 개강');
     setPopFormDescription(item.description || '');
     setIsPopFormOpen(true);
   };
@@ -325,7 +391,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     }
 
     try {
-      const url = editingPopCourse ? `/api/popular-courses/${editingPopCourse.id}` : '/api/popular-courses';
+      const url = editingPopCourse ? `/api/popular-courses/${encodeURIComponent(editingPopCourse.id)}` : '/api/popular-courses';
       const method = editingPopCourse ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -336,6 +402,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
           badge: popFormBadge,
           badgeColor: popFormBadgeColor,
           timeSlot: popFormTimeSlot,
+          startDate: popFormStartDate,
           description: popFormDescription,
         }),
       });
@@ -355,23 +422,29 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     }
   };
 
-  const handleDeletePopCourseItem = async (id: string, title: string) => {
-    if (!window.confirm(`[${title}] 인기 강좌를 정말 삭제하시겠습니까?`)) return;
-
-    try {
-      const res = await fetch(`/api/popular-courses/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        fetchPopularCoursesAdmin();
-        window.dispatchEvent(new Event('popular_courses_updated'));
-        setPopSuccessMsg('인기 강좌가 삭제되었습니다.');
-        setTimeout(() => setPopSuccessMsg(''), 4000);
-      } else {
-        alert(data.error || '삭제 실패');
+  const handleDeletePopCourseItem = (id: string, title: string) => {
+    requestConfirm(
+      '인기 강좌 삭제 확인',
+      `[${title}]\n\n이 인기 강좌 항목을 정말 삭제하시겠습니까?`,
+      async () => {
+        try {
+          const res = await fetch(`/api/popular-courses/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.success) {
+            setPopularCourses((prev) => prev.filter((item) => String(item.id) !== String(id)));
+            fetchPopularCoursesAdmin();
+            window.dispatchEvent(new Event('popular_courses_updated'));
+            setPopSuccessMsg('인기 강좌가 삭제되었습니다.');
+            setTimeout(() => setPopSuccessMsg(''), 4000);
+          } else {
+            setPopSuccessMsg(data.error || '삭제 중 오류가 발생했습니다.');
+            setTimeout(() => setPopSuccessMsg(''), 4000);
+          }
+        } catch (err) {
+          console.error('Failed to delete course item:', err);
+        }
       }
-    } catch (err) {
-      alert('삭제 중 오류가 발생했습니다.');
-    }
+    );
   };
 
   useEffect(() => {
@@ -398,8 +471,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     }
   };
 
-  const handleSaveNotice = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveNotice = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setSavingNotice(true);
     setNoticeSuccessMsg('');
     try {
@@ -410,7 +483,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       });
       const data = await res.json();
       if (data.success) {
-        setNoticeSuccessMsg('개강 공지 팝업 설정이 실시간으로 홈페이지에 반영되었습니다!');
+        setNoticeSuccessMsg('개강 공지 팝업 설정 및 과정이 실시간으로 홈페이지 팝업에 반영되었습니다!');
+        window.dispatchEvent(new Event('notice_popup_updated'));
         if (onNoticeUpdated) onNoticeUpdated();
         setTimeout(() => setNoticeSuccessMsg(''), 4000);
       } else {
@@ -444,55 +518,61 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   };
 
   // Batch Delete Handler
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = () => {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`선택한 ${selectedIds.length}건의 신청 내역을 정말 삭제하시겠습니까?`)) return;
-
-    try {
-      const res = await fetch('/api/inquiries/batch-delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: selectedIds }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setInquiries((prev) => prev.filter((item) => !selectedIds.includes(item.id)));
-        setSelectedIds([]);
-      } else {
-        alert(data.error || '삭제 작업 실패');
+    requestConfirm(
+      '선택 내역 삭제 확인',
+      `선택한 ${selectedIds.length}건의 수강 신청 내역을 정말 삭제하시겠습니까?`,
+      async () => {
+        try {
+          const res = await fetch('/api/inquiries/batch-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: selectedIds }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            setInquiries((prev) => prev.filter((item) => !selectedIds.includes(item.id)));
+            setSelectedIds([]);
+            window.dispatchEvent(new Event('inquiry_updated'));
+          }
+        } catch (err) {
+          console.error('Failed to delete selected inquiries:', err);
+        }
       }
-    } catch (err) {
-      alert('삭제 중 오류가 발생했습니다.');
-    }
+    );
   };
 
   // Clear All Handler
-  const handleClearAll = async () => {
+  const handleClearAll = () => {
     if (inquiries.length === 0) return;
-    if (!window.confirm('🚨 전체 신청 내역을 삭제하시겠습니까?\n이 작업은 복구할 수 없습니다.')) return;
-
-    try {
-      const res = await fetch('/api/inquiries/batch-delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clearAll: true }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setInquiries([]);
-        setSelectedIds([]);
-      } else {
-        alert(data.error || '삭제 작업 실패');
+    requestConfirm(
+      '전체 내역 삭제 경고',
+      '🚨 전체 수강 신청 내역을 삭제하시겠습니까?\n이 작업은 복구할 수 없습니다.',
+      async () => {
+        try {
+          const res = await fetch('/api/inquiries/batch-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clearAll: true }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            setInquiries([]);
+            setSelectedIds([]);
+            window.dispatchEvent(new Event('inquiry_updated'));
+          }
+        } catch (err) {
+          console.error('Failed to clear all inquiries:', err);
+        }
       }
-    } catch (err) {
-      alert('전체 삭제 중 오류가 발생했습니다.');
-    }
+    );
   };
 
   // Status Change Handler
   const handleStatusChange = async (id: string, newStatus: InquiryRecord['status']) => {
     try {
-      const res = await fetch(`/api/inquiries/${id}`, {
+      const res = await fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -500,8 +580,9 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       const data = await res.json();
       if (data.success) {
         setInquiries((prev) =>
-          prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
+          prev.map((item) => (String(item.id) === String(id) ? { ...item, status: newStatus } : item))
         );
+        window.dispatchEvent(new Event('inquiry_updated'));
       }
     } catch (err) {
       alert('상태 변경에 실패했습니다.');
@@ -511,7 +592,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   // Save Admin Notes Handler
   const handleSaveMemo = async (id: string) => {
     try {
-      const res = await fetch(`/api/inquiries/${id}`, {
+      const res = await fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminNotes: editingMemo }),
@@ -519,7 +600,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       const data = await res.json();
       if (data.success) {
         setInquiries((prev) =>
-          prev.map((item) => (item.id === id ? { ...item, adminNotes: editingMemo } : item))
+          prev.map((item) => (String(item.id) === String(id) ? { ...item, adminNotes: editingMemo } : item))
         );
         setEditingId(null);
       }
@@ -529,18 +610,23 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   };
 
   // Delete Handler
-  const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`${name}님의 수강 신청 내역을 정말 삭제하시겠습니까?`)) return;
-
-    try {
-      const res = await fetch(`/api/inquiries/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        setInquiries((prev) => prev.filter((item) => item.id !== id));
+  const handleDelete = (id: string, name: string) => {
+    requestConfirm(
+      '신청 내역 삭제 확인',
+      `${name}님의 수강 신청 내역을 정말 삭제하시겠습니까?`,
+      async () => {
+        try {
+          const res = await fetch(`/api/inquiries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.success) {
+            setInquiries((prev) => prev.filter((item) => String(item.id) !== String(id)));
+            window.dispatchEvent(new Event('inquiry_updated'));
+          }
+        } catch (err) {
+          console.error('Failed to delete inquiry:', err);
+        }
       }
-    } catch (err) {
-      alert('삭제 중 오류가 발생했습니다.');
-    }
+    );
   };
 
   // Filtered list
@@ -557,44 +643,641 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   });
 
   // Excel Export
-  const handleExportToExcel = () => {
-    if (inquiries.length === 0) {
-      alert('다운로드할 수강 신청 데이터가 없습니다.');
-      return;
-    }
+  const handleExportToExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = '홍천 중앙정보처리학원';
 
-    const excelData = filteredInquiries.map((item, index) => ({
-      '연번': index + 1,
-      '접수번호': item.id,
-      '접수일시': new Date(item.createdAt).toLocaleString('ko-KR'),
-      '성함': item.name,
-      '연락처': item.phone,
-      '희망 강좌': item.courseInterest,
-      '희망 시간대': item.preferredTime,
-      '내일배움카드': item.hasNaeilCard,
-      '신분/구분': item.userCategory,
-      '추가 문의사항': item.message || '-',
-      '진행 상태': item.status,
-      '관리자 메모': item.adminNotes || '-',
-    }));
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const dateString = `${yyyy}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    
-    // Auto column width
-    const max_width = excelData.reduce((acc: any, row: any) => {
-      Object.keys(row).forEach((key, idx) => {
-        const valStr = String(row[key] || '');
-        acc[idx] = Math.max(acc[idx] || 10, valStr.length * 2 + 2);
+    const borderThin = {
+      top: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
+      left: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
+    };
+
+    const formatDateKo = (dateStr: string) => {
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        const m = d.getMonth() + 1;
+        const day = d.getDate();
+        const hours = d.getHours();
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const ampm = hours >= 12 ? '오후' : '오전';
+        const formattedHours = String(hours % 12 || 12).padStart(2, '0');
+        return `${m}월 ${day}일 ${ampm} ${formattedHours}:${minutes}`;
+      } catch {
+        return dateStr;
+      }
+    };
+
+    if (activeTab === 'inquiries') {
+      if (inquiries.length === 0) {
+        alert('다운로드할 수강 신청 데이터가 없습니다.');
+        return;
+      }
+
+      const dataToExport = filteredInquiries.length > 0 ? filteredInquiries : inquiries;
+      const worksheet = workbook.addWorksheet('수강신청접수명단');
+      worksheet.views = [{ showGridLines: true }];
+
+      worksheet.columns = [
+        { key: 'no', width: 8 },         // A: 연번
+        { key: 'name', width: 15 },       // B: 성함
+        { key: 'phone', width: 18 },      // C: 연락처
+        { key: 'course', width: 32 },     // D: 희망 강좌
+        { key: 'status', width: 16 },     // E: 상담 상태
+        { key: 'message', width: 38 },    // F: 비고 및 전달사항
+        { key: 'date', width: 22 },       // G: 신청 일시
+      ];
+
+      // 1. Title Banner
+      worksheet.mergeCells('A1:G2');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = '홍천 중앙정보처리학원 수강 신청 및 상담 접수 명단';
+      titleCell.font = { name: '맑은 고딕', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF006644' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      worksheet.getRow(1).height = 22;
+      worksheet.getRow(2).height = 22;
+
+      // 2. Meta Info
+      worksheet.getRow(3).height = 20;
+      worksheet.mergeCells('A3:G3');
+      const metaCell = worksheet.getCell('A3');
+      metaCell.value = `출력일시: ${dateString}  |  총 제출 건수: ${dataToExport.length}건`;
+      metaCell.font = { name: '맑은 고딕', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+      metaCell.alignment = { vertical: 'middle', horizontal: 'right' };
+
+      // 3. Summary Table
+      const pendingCnt = dataToExport.filter((i) => i.status === '상담대기' || !i.status).length;
+      const inProgressCnt = dataToExport.filter((i) => i.status === '상담진행중').length;
+      const completedCnt = dataToExport.filter((i) => i.status === '상담완료').length;
+      const canceledCnt = dataToExport.filter((i) => i.status === '취소/보류' || i.status === '보류').length;
+      const totalCnt = dataToExport.length;
+
+      worksheet.getRow(5).height = 24;
+      worksheet.getRow(6).height = 26;
+
+      worksheet.getCell('A5').value = '구분';
+      worksheet.getCell('B5').value = '상담 대기';
+      worksheet.getCell('C5').value = '상담 진행중';
+      worksheet.getCell('D5').value = '상담 완료';
+      worksheet.getCell('E5').value = '취소 / 보류';
+      worksheet.mergeCells('F5:G5');
+      worksheet.getCell('F5').value = '전체 제출';
+
+      ['A5','B5','C5','D5','E5','F5','G5'].forEach((ref) => {
+        const cell = worksheet.getCell(ref);
+        cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF334155' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
       });
-      return acc;
-    }, []);
-    worksheet['!cols'] = max_width.map((w: number) => ({ wch: Math.min(w, 50) }));
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '수강신청목록');
+      worksheet.getCell('A6').value = '인원(명)';
+      worksheet.getCell('A6').font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF334155' } };
+      worksheet.getCell('A6').alignment = { vertical: 'middle', horizontal: 'center' };
 
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    XLSX.writeFile(workbook, `홍천중앙정보처리학원_수강신청목록_${todayStr}.xlsx`);
+      const b6 = worksheet.getCell('B6');
+      b6.value = `${pendingCnt} 명`;
+      b6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF15803D' } };
+      b6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+      b6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const c6 = worksheet.getCell('C6');
+      c6.value = `${inProgressCnt} 명`;
+      c6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFC2410C' } };
+      c6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+      c6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const d6 = worksheet.getCell('D6');
+      d6.value = `${completedCnt} 명`;
+      d6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF1D4ED8' } };
+      d6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+      d6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const e6 = worksheet.getCell('E6');
+      e6.value = `${canceledCnt} 명`;
+      e6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF475569' } };
+      e6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+      e6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      worksheet.mergeCells('F6:G6');
+      const f6 = worksheet.getCell('F6');
+      f6.value = `${totalCnt} 명`;
+      f6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF0F172A' } };
+      f6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      ['A5','B5','C5','D5','E5','F5','G5','A6','B6','C6','D6','E6','F6','G6'].forEach((ref) => {
+        worksheet.getCell(ref).border = borderThin;
+      });
+
+      // 4. Main Table Header
+      worksheet.getRow(8).height = 28;
+      const headers = ['연번', '성함', '연락처', '희망 강좌', '상담 상태', '비고 및 전달사항', '신청 일시'];
+      const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+
+      cols.forEach((col, idx) => {
+        const cell = worksheet.getCell(`${col}8`);
+        cell.value = headers[idx];
+        cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF006644' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = borderThin;
+      });
+
+      // 5. Main Data Rows
+      dataToExport.forEach((item, index) => {
+        const rowIdx = 9 + index;
+        const row = worksheet.getRow(rowIdx);
+        row.height = 24;
+
+        const formattedDate = formatDateKo(item.createdAt);
+        let fullMessage = item.message || '';
+        if (item.preferredTime) fullMessage = `[희망시간: ${item.preferredTime}] ${fullMessage}`.trim();
+        if (item.userCategory) fullMessage = `[구분: ${item.userCategory}] ${fullMessage}`.trim();
+        if (item.hasNaeilCard) fullMessage = `[카드: ${item.hasNaeilCard}] ${fullMessage}`.trim();
+        if (item.adminNotes) fullMessage = `${fullMessage} (메모: ${item.adminNotes})`.trim();
+        if (!fullMessage) fullMessage = '-';
+
+        const statusText = item.status || '상담대기';
+
+        worksheet.getCell(`A${rowIdx}`).value = index + 1;
+        worksheet.getCell(`B${rowIdx}`).value = item.name;
+        worksheet.getCell(`C${rowIdx}`).value = item.phone;
+        worksheet.getCell(`D${rowIdx}`).value = item.courseInterest;
+        worksheet.getCell(`E${rowIdx}`).value = statusText;
+        worksheet.getCell(`F${rowIdx}`).value = fullMessage;
+        worksheet.getCell(`G${rowIdx}`).value = formattedDate;
+
+        worksheet.getCell(`A${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`B${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`C${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`D${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getCell(`E${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`F${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getCell(`G${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        cols.forEach((col) => {
+          const cell = worksheet.getCell(`${col}${rowIdx}`);
+          cell.font = { name: '맑은 고딕', size: 10, color: { argb: 'FF1E293B' } };
+          cell.border = borderThin;
+        });
+
+        const statusCell = worksheet.getCell(`E${rowIdx}`);
+        if (statusText === '상담대기' || statusText === '대기') {
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+          statusCell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF15803D' } };
+        } else if (statusText === '상담진행중' || statusText === '진행중') {
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+          statusCell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FFC2410C' } };
+        } else if (statusText === '상담완료' || statusText === '완료') {
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+          statusCell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF1D4ED8' } };
+        } else {
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+          statusCell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF475569' } };
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `홍천중앙정보처리학원_수강신청접수명단_${yyyy}${mm}${dd}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+    } else if (activeTab === 'boardNotices') {
+      if (boardNotices.length === 0) {
+        alert('다운로드할 공지사항 데이터가 없습니다.');
+        return;
+      }
+
+      const worksheet = workbook.addWorksheet('공지사항목록');
+      worksheet.views = [{ showGridLines: true }];
+
+      worksheet.columns = [
+        { key: 'no', width: 8 },         // A: 연번
+        { key: 'category', width: 16 },  // B: 분류 카테고리
+        { key: 'important', width: 14 }, // C: 중요도 구분
+        { key: 'title', width: 42 },     // D: 공지글 제목
+        { key: 'author', width: 14 },    // E: 작성자
+        { key: 'views', width: 10 },     // F: 조회수
+        { key: 'date', width: 18 },      // G: 작성/등록일
+      ];
+
+      // 1. Title Banner
+      worksheet.mergeCells('A1:G2');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = '홍천 중앙정보처리학원 공지사항 및 자격시험 일정 목록';
+      titleCell.font = { name: '맑은 고딕', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF006644' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      worksheet.getRow(1).height = 22;
+      worksheet.getRow(2).height = 22;
+
+      // 2. Meta Info
+      worksheet.getRow(3).height = 20;
+      worksheet.mergeCells('A3:G3');
+      const metaCell = worksheet.getCell('A3');
+      metaCell.value = `출력일시: ${dateString}  |  총 등록 게시글: ${boardNotices.length}건`;
+      metaCell.font = { name: '맑은 고딕', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+      metaCell.alignment = { vertical: 'middle', horizontal: 'right' };
+
+      // 3. Summary Table
+      const importantCnt = boardNotices.filter((n) => n.important).length;
+      const normalCnt = boardNotices.filter((n) => !n.important).length;
+      const totalCnt = boardNotices.length;
+
+      worksheet.getRow(5).height = 24;
+      worksheet.getRow(6).height = 26;
+
+      worksheet.getCell('A5').value = '구분';
+      worksheet.getCell('B5').value = '필독 / 중요 공지';
+      worksheet.getCell('C5').value = '일반 공지사항';
+      worksheet.mergeCells('D5:E5');
+      worksheet.getCell('D5').value = '최신 등록일';
+      worksheet.mergeCells('F5:G5');
+      worksheet.getCell('F5').value = '총 게시글';
+
+      ['A5','B5','C5','D5','E5','F5','G5'].forEach((ref) => {
+        const cell = worksheet.getCell(ref);
+        cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF334155' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+
+      worksheet.getCell('A6').value = '수(건)';
+      worksheet.getCell('A6').font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF334155' } };
+      worksheet.getCell('A6').alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const b6 = worksheet.getCell('B6');
+      b6.value = `${importantCnt} 건`;
+      b6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFC2410C' } };
+      b6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+      b6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const c6 = worksheet.getCell('C6');
+      c6.value = `${normalCnt} 건`;
+      c6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF1D4ED8' } };
+      c6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+      c6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      worksheet.mergeCells('D6:E6');
+      const d6 = worksheet.getCell('D6');
+      d6.value = boardNotices[0]?.date || '최신 등록';
+      d6.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+      d6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      worksheet.mergeCells('F6:G6');
+      const f6 = worksheet.getCell('F6');
+      f6.value = `${totalCnt} 건`;
+      f6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF0F172A' } };
+      f6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      ['A5','B5','C5','D5','E5','F5','G5','A6','B6','C6','D6','E6','F6','G6'].forEach((ref) => {
+        worksheet.getCell(ref).border = borderThin;
+      });
+
+      // 4. Main Table Header
+      worksheet.getRow(8).height = 28;
+      const headers = ['연번', '분류 카테고리', '중요도 구분', '공지글 제목', '작성자', '조회수', '등록일자'];
+      const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+
+      cols.forEach((col, idx) => {
+        const cell = worksheet.getCell(`${col}8`);
+        cell.value = headers[idx];
+        cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF006644' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = borderThin;
+      });
+
+      // 5. Data Rows
+      boardNotices.forEach((item, index) => {
+        const rowIdx = 9 + index;
+        const row = worksheet.getRow(rowIdx);
+        row.height = 24;
+
+        worksheet.getCell(`A${rowIdx}`).value = index + 1;
+        worksheet.getCell(`B${rowIdx}`).value = item.category;
+        worksheet.getCell(`C${rowIdx}`).value = item.important ? '필독 공지' : '일반 공지';
+        worksheet.getCell(`D${rowIdx}`).value = item.title;
+        worksheet.getCell(`E${rowIdx}`).value = item.author || '관리자';
+        worksheet.getCell(`F${rowIdx}`).value = item.views || 0;
+        worksheet.getCell(`G${rowIdx}`).value = item.date;
+
+        worksheet.getCell(`A${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`B${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`C${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`D${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getCell(`E${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`F${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`G${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        cols.forEach((col) => {
+          const cell = worksheet.getCell(`${col}${rowIdx}`);
+          cell.font = { name: '맑은 고딕', size: 10, color: { argb: 'FF1E293B' } };
+          cell.border = borderThin;
+        });
+
+        const impCell = worksheet.getCell(`C${rowIdx}`);
+        if (item.important) {
+          impCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+          impCell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FFC2410C' } };
+        } else {
+          impCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `홍천중앙정보처리학원_공지사항목록_${yyyy}${mm}${dd}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+    } else if (activeTab === 'popularCourses') {
+      if (popularCourses.length === 0) {
+        alert('다운로드할 실시간 인기강좌 데이터가 없습니다.');
+        return;
+      }
+
+      const worksheet = workbook.addWorksheet('인기강좌목록');
+      worksheet.views = [{ showGridLines: true }];
+
+      worksheet.columns = [
+        { key: 'no', width: 8 },          // A: 연번
+        { key: 'badge', width: 22 },       // B: 모집 상태 배지
+        { key: 'color', width: 12 },       // C: 테마 컬러
+        { key: 'title', width: 32 },       // D: 강좌/과정명
+        { key: 'startDate', width: 18 },   // E: 개강 일정
+        { key: 'timeSlot', width: 22 },    // F: 수강 시간대
+        { key: 'desc', width: 40 },        // G: 강좌 개요 및 안내
+        { key: 'createdAt', width: 16 },   // H: 등록/수정일
+      ];
+
+      // 1. Title Banner
+      worksheet.mergeCells('A1:H2');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = '홍천 중앙정보처리학원 실시간 인기 및 추천강좌 관리 목록';
+      titleCell.font = { name: '맑은 고딕', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF006644' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      worksheet.getRow(1).height = 22;
+      worksheet.getRow(2).height = 22;
+
+      // 2. Meta Info
+      worksheet.getRow(3).height = 20;
+      worksheet.mergeCells('A3:H3');
+      const metaCell = worksheet.getCell('A3');
+      metaCell.value = `출력일시: ${dateString}  |  총 개강 등록 강좌: ${popularCourses.length}개`;
+      metaCell.font = { name: '맑은 고딕', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+      metaCell.alignment = { vertical: 'middle', horizontal: 'right' };
+
+      // 3. Summary Table
+      const cardCnt = popularCourses.filter((c) => c.badge.includes('국비') || c.badge.includes('카드')).length;
+      const recCnt = popularCourses.filter((c) => c.badge.includes('인기') || c.badge.includes('추천')).length;
+      const totalCnt = popularCourses.length;
+
+      worksheet.getRow(5).height = 24;
+      worksheet.getRow(6).height = 26;
+
+      worksheet.getCell('A5').value = '구분';
+      worksheet.mergeCells('B5:C5');
+      worksheet.getCell('B5').value = '국비지원 강좌';
+      worksheet.mergeCells('D5:F5');
+      worksheet.getCell('D5').value = '인기 / 추천 강좌';
+      worksheet.mergeCells('G5:H5');
+      worksheet.getCell('G5').value = '총 등록 강좌 수';
+
+      ['A5','B5','C5','D5','E5','F5','G5','H5'].forEach((ref) => {
+        const cell = worksheet.getCell(ref);
+        cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF334155' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+
+      worksheet.getCell('A6').value = '개수';
+      worksheet.getCell('A6').font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF334155' } };
+      worksheet.getCell('A6').alignment = { vertical: 'middle', horizontal: 'center' };
+
+      worksheet.mergeCells('B6:C6');
+      const b6 = worksheet.getCell('B6');
+      b6.value = `${cardCnt} 개`;
+      b6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF1D4ED8' } };
+      b6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+      b6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      worksheet.mergeCells('D6:F6');
+      const d6 = worksheet.getCell('D6');
+      d6.value = `${recCnt} 개`;
+      d6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF15803D' } };
+      d6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+      d6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      worksheet.mergeCells('G6:H6');
+      const g6 = worksheet.getCell('G6');
+      g6.value = `${totalCnt} 개`;
+      g6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF0F172A' } };
+      g6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      ['A5','B5','C5','D5','E5','F5','G5','H5','A6','B6','C6','D6','E6','F6','G6','H6'].forEach((ref) => {
+        worksheet.getCell(ref).border = borderThin;
+      });
+
+      // 4. Main Table Header
+      worksheet.getRow(8).height = 28;
+      const headers = ['연번', '모집 상태 배지', '테마 색상', '강좌 / 과정명', '개강 일정', '수강 시간대', '강좌 안내 및 설명', '등록/수정일'];
+      const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
+      cols.forEach((col, idx) => {
+        const cell = worksheet.getCell(`${col}8`);
+        cell.value = headers[idx];
+        cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF006644' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = borderThin;
+      });
+
+      // 5. Data Rows
+      popularCourses.forEach((item, index) => {
+        const rowIdx = 9 + index;
+        const row = worksheet.getRow(rowIdx);
+        row.height = 24;
+
+        worksheet.getCell(`A${rowIdx}`).value = index + 1;
+        worksheet.getCell(`B${rowIdx}`).value = item.badge;
+        worksheet.getCell(`C${rowIdx}`).value = item.badgeColor;
+        worksheet.getCell(`D${rowIdx}`).value = item.title;
+        worksheet.getCell(`E${rowIdx}`).value = item.startDate || '수시 개강';
+        worksheet.getCell(`F${rowIdx}`).value = item.timeSlot;
+        worksheet.getCell(`G${rowIdx}`).value = item.description || '-';
+        worksheet.getCell(`H${rowIdx}`).value = item.createdAt || '2026-08-01';
+
+        worksheet.getCell(`A${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`B${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`C${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`D${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getCell(`E${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`F${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`G${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getCell(`H${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        cols.forEach((col) => {
+          const cell = worksheet.getCell(`${col}${rowIdx}`);
+          cell.font = { name: '맑은 고딕', size: 10, color: { argb: 'FF1E293B' } };
+          cell.border = borderThin;
+        });
+
+        const badgeCell = worksheet.getCell(`B${rowIdx}`);
+        badgeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+        badgeCell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF15803D' } };
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `홍천중앙정보처리학원_인기강좌목록_${yyyy}${mm}${dd}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+    } else if (activeTab === 'notice') {
+      const schedules = noticeConfig.schedules || [];
+      const worksheet = workbook.addWorksheet('메인팝업공지설정');
+      worksheet.views = [{ showGridLines: true }];
+
+      worksheet.columns = [
+        { key: 'no', width: 8 },          // A: 연번
+        { key: 'badge', width: 18 },       // B: 일정 구분 배지
+        { key: 'course', width: 38 },      // C: 과정/자격증 시험명
+        { key: 'date', width: 22 },        // D: 개강/시험 일시
+        { key: 'time', width: 32 },        // E: 수강 시간대 및 상세 안내
+      ];
+
+      // 1. Title Banner
+      worksheet.mergeCells('A1:E2');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = '홍천 중앙정보처리학원 메인 팝업공지 및 개강 일정 설정';
+      titleCell.font = { name: '맑은 고딕', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF006644' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      worksheet.getRow(1).height = 22;
+      worksheet.getRow(2).height = 22;
+
+      // 2. Meta Info
+      worksheet.getRow(3).height = 20;
+      worksheet.mergeCells('A3:E3');
+      const metaCell = worksheet.getCell('A3');
+      metaCell.value = `출력일시: ${dateString}  |  등록된 주요 일정: ${schedules.length}건`;
+      metaCell.font = { name: '맑은 고딕', size: 9.5, italic: true, color: { argb: 'FF475569' } };
+      metaCell.alignment = { vertical: 'middle', horizontal: 'right' };
+
+      // 3. Summary Table
+      worksheet.getRow(5).height = 24;
+      worksheet.getRow(6).height = 26;
+
+      worksheet.getCell('A5').value = '구분';
+      worksheet.getCell('B5').value = '팝업 노출 상태';
+      worksheet.mergeCells('C5:D5');
+      worksheet.getCell('C5').value = '메인 팝업 타이틀';
+      worksheet.getCell('E5').value = '등록된 일정 수';
+
+      ['A5','B5','C5','D5','E5'].forEach((ref) => {
+        const cell = worksheet.getCell(ref);
+        cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF334155' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+
+      worksheet.getCell('A6').value = '정보';
+      worksheet.getCell('A6').font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF334155' } };
+      worksheet.getCell('A6').alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const b6 = worksheet.getCell('B6');
+      b6.value = noticeConfig.enabled ? '노출 중 (활성)' : '비활성화';
+      b6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: noticeConfig.enabled ? 'FF15803D' : 'FFC2410C' } };
+      b6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: noticeConfig.enabled ? 'FFDCFCE7' : 'FFFEF3C7' } };
+      b6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      worksheet.mergeCells('C6:D6');
+      const c6 = worksheet.getCell('C6');
+      c6.value = noticeConfig.title;
+      c6.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+      c6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const e6 = worksheet.getCell('E6');
+      e6.value = `${schedules.length} 건`;
+      e6.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF0F172A' } };
+      e6.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      ['A5','B5','C5','D5','E5','A6','B6','C6','D6','E6'].forEach((ref) => {
+        worksheet.getCell(ref).border = borderThin;
+      });
+
+      // 4. Main Table Header
+      worksheet.getRow(8).height = 28;
+      const headers = ['연번', '일정 구분 배지', '개강 과정 / 자격증 시험명', '개강 / 시험 일시', '수강 시간대 및 세부 안내'];
+      const cols = ['A', 'B', 'C', 'D', 'E'];
+
+      cols.forEach((col, idx) => {
+        const cell = worksheet.getCell(`${col}8`);
+        cell.value = headers[idx];
+        cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF006644' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = borderThin;
+      });
+
+      // 5. Data Rows
+      schedules.forEach((item, index) => {
+        const rowIdx = 9 + index;
+        const row = worksheet.getRow(rowIdx);
+        row.height = 24;
+
+        worksheet.getCell(`A${rowIdx}`).value = index + 1;
+        worksheet.getCell(`B${rowIdx}`).value = item.badgeText || '개강안내';
+        worksheet.getCell(`C${rowIdx}`).value = item.courseName || item.title || '';
+        worksheet.getCell(`D${rowIdx}`).value = item.startDate || item.dateText || '';
+        worksheet.getCell(`E${rowIdx}`).value = item.timeSlot || item.timeText || '';
+
+        worksheet.getCell(`A${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`B${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`C${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getCell(`D${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getCell(`E${rowIdx}`).alignment = { vertical: 'middle', horizontal: 'left' };
+
+        cols.forEach((col) => {
+          const cell = worksheet.getCell(`${col}${rowIdx}`);
+          cell.font = { name: '맑은 고딕', size: 10, color: { argb: 'FF1E293B' } };
+          cell.border = borderThin;
+        });
+
+        const badgeCell = worksheet.getCell(`B${rowIdx}`);
+        badgeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+        badgeCell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF1D4ED8' } };
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `홍천중앙정보처리학원_메인팝업공지설정_${yyyy}${mm}${dd}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
   };
 
   // Stats
@@ -637,21 +1320,29 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
         </div>
 
         {/* Tab Navigation Bar (When Authenticated) */}
-        {isAuthenticated && (
-          <div className="bg-slate-900 border-t border-slate-800 px-5 sm:px-6 py-2.5 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveTab('inquiries')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'inquiries'
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>수강 신청 목록 ({inquiries.length}건)</span>
-              </button>
+        {isAuthenticated && (() => {
+          const pendingCount = inquiries.filter((item) => item.status === '상담대기' || !item.status).length;
+          return (
+            <div className="bg-slate-900 border-t border-slate-800 px-5 sm:px-6 py-2.5 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('inquiries')}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                    activeTab === 'inquiries'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>수강 신청 목록 ({inquiries.length}건)</span>
+                  {pendingCount > 0 && (
+                    <span className="px-2 py-0.5 text-[10px] bg-red-600 text-white font-black rounded-full animate-pulse flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                      대기 {pendingCount}건
+                    </span>
+                  )}
+                </button>
 
               <button
                 type="button"
@@ -698,18 +1389,22 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               </button>
             </div>
 
-            {activeTab === 'inquiries' && (
-              <button
-                onClick={handleExportToExcel}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
-                title="엑셀파일로 다운로드"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>엑셀 다운로드 (.xlsx)</span>
-              </button>
-            )}
+            <button
+              onClick={handleExportToExcel}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
+              title="엑셀파일로 다운로드"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>
+                {activeTab === 'inquiries' && '수강신청 엑셀 다운로드'}
+                {activeTab === 'notice' && '팝업공지 엑셀 다운로드'}
+                {activeTab === 'boardNotices' && '공지사항 엑셀 다운로드'}
+                {activeTab === 'popularCourses' && '인기강좌 엑셀 다운로드'}
+              </span>
+            </button>
           </div>
-        )}
+        );
+      })()}
 
         {/* Modal Body */}
         {!isAuthenticated ? (
@@ -973,6 +1668,18 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                         </div>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveNotice()}
+                      disabled={savingNotice}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5 text-white" />
+                      <span>{savingNotice ? '저장 중...' : '개강 과정 수정 사항 저장 & 팝업 즉시 반영'}</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1357,7 +2064,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                  <div className="md:col-span-8">
+                  <div className="md:col-span-6">
                     <label className="block text-xs font-extrabold text-slate-700 mb-1">
                       강좌명 <span className="text-red-500">*</span>
                     </label>
@@ -1371,7 +2078,18 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                     />
                   </div>
 
-                  <div className="md:col-span-4">
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">개강일</label>
+                    <input
+                      type="text"
+                      value={popFormStartDate}
+                      onChange={(e) => setPopFormStartDate(e.target.value)}
+                      placeholder="예: 2026-09-01 개강 또는 수시 개강"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-3">
                     <label className="block text-xs font-extrabold text-slate-700 mb-1">수강 시간대</label>
                     <input
                       type="text"
@@ -1474,15 +2192,22 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                         className="p-4 sm:p-5 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                       >
                         <div className="space-y-1.5 max-w-2xl">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span
                               className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${colorClasses.bg}`}
                             >
                               {item.badge}
                             </span>
+                            <span className="text-xs text-blue-800 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-blue-600" />
+                              개강: {item.startDate || '수시 개강'}
+                            </span>
                             <span className="text-xs text-slate-500 font-mono font-bold flex items-center gap-1">
                               <Clock className="w-3 h-3 text-slate-400" />
                               {item.timeSlot}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1 ml-auto sm:ml-0">
+                              등록일: {item.createdAt || '2026-08-01'}
                             </span>
                           </div>
 
@@ -1846,7 +2571,12 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>전체 엑셀 다운로드</span>
+                <span>
+                  {activeTab === 'inquiries' && '수강신청 엑셀 다운로드'}
+                  {activeTab === 'notice' && '팝업공지 엑셀 다운로드'}
+                  {activeTab === 'boardNotices' && '공지사항 엑셀 다운로드'}
+                  {activeTab === 'popularCourses' && '인기강좌 엑셀 다운로드'}
+                </span>
               </button>
             )}
             <button
@@ -1858,6 +2588,42 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
           </div>
         </div>
 
+        {/* Custom Confirmation Modal for Sandboxed Iframes */}
+        {confirmDialog.isOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 space-y-4 border border-slate-100 transform transition-all">
+              <div className="flex items-center gap-3 text-red-600">
+                <div className="p-2.5 bg-red-100 rounded-2xl">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-base text-slate-900">{confirmDialog.title}</h3>
+              </div>
+              <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">
+                {confirmDialog.message}
+              </p>
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const action = confirmDialog.onConfirm;
+                    setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+                    action();
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-colors cursor-pointer"
+                >
+                  {confirmDialog.confirmText || '삭제하기'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

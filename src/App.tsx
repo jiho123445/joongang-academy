@@ -17,7 +17,7 @@ import { LocationSection } from './components/LocationSection';
 import { Footer } from './components/Footer';
 import { AiConsultantModal } from './components/AiConsultantModal';
 import { MobileQuickBar } from './components/MobileQuickBar';
-import { ChevronRight, CreditCard, FileText, MapPin, Award } from 'lucide-react';
+import { ChevronRight, CreditCard, FileText, MapPin, Award, Megaphone } from 'lucide-react';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<string>('home');
@@ -31,31 +31,113 @@ export default function App() {
   const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig | null>(null);
   const [isNoticePopupOpen, setIsNoticePopupOpen] = useState<boolean>(false);
 
+  // Pending Inquiries Count State for Admin Red Indicator
+  const [pendingInquiryCount, setPendingInquiryCount] = useState<number>(0);
+
+  const fetchPendingInquiriesCount = async () => {
+    try {
+      const res = await fetch('/api/inquiries');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        const pending = data.data.filter((item: any) => item.status === '상담대기' || !item.status).length;
+        setPendingInquiryCount(pending);
+      }
+    } catch (err) {
+      console.error('Failed to fetch pending inquiries count:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPendingInquiriesCount();
+    const interval = setInterval(fetchPendingInquiriesCount, 10000);
+
+    const handleInquirySubmitted = () => fetchPendingInquiriesCount();
+    const handleInquiryUpdated = () => fetchPendingInquiriesCount();
+
+    window.addEventListener('inquiry_submitted', handleInquirySubmitted);
+    window.addEventListener('inquiry_updated', handleInquiryUpdated);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('inquiry_submitted', handleInquirySubmitted);
+      window.removeEventListener('inquiry_updated', handleInquiryUpdated);
+    };
+  }, []);
+
+  const fallbackPopupNotice: PopupNoticeConfig = {
+    enabled: true,
+    badgeText: '2026년 하반기 신규 개강 안내',
+    title: '홍천 중앙정보처리학원 8~9월 수강생 모집',
+    subtitle: '국비지원 최대 100% 지원 & 1:1 맞춤 실습 교육',
+    content: '컴퓨터활용능력(1급/2급), 전산세무회계, 정보처리기능사/기사, GTQ/ITQ 자격증, 시니어 어르신 기초반 수강생을 모집합니다! 지금 신청하시고 국민내일배움카드 혜택을 받으세요.',
+    dateText: '개강일: 2026년 8월 ~ 9월 수시 개강 (오전/오후/야간반 운영)',
+    schedules: [
+      { courseName: '컴퓨터활용능력 (1급 / 2급)', startDate: '8월 18일 개강', timeSlot: '오전 10:00 / 야간 19:00' },
+      { courseName: '전산세무회계 (전산회계1급/세무2급)', startDate: '8월 25일 개강', timeSlot: '오후 14:00 / 야간 19:00' },
+      { courseName: '시니어 어르신 왕초보 컴퓨터&스마트폰', startDate: '8월 20일 개강', timeSlot: '오후 13:30 ~ 15:00' },
+      { courseName: '정보처리기능사 / GTQ 포토샵 자격증', startDate: '9월 01일 개강', timeSlot: '오후 15:30 / 야간 19:00' },
+    ],
+    actionText: '지금 온라인 수강신청하기',
+  };
+
   const fetchNoticeConfig = async (forceShow = false) => {
     try {
       const res = await fetch('/api/popup-notice');
       const data = await res.json();
-      if (data.success && data.data) {
-        setNoticeConfig(data.data);
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const hiddenDate = localStorage.getItem('hide_notice_popup_until');
+      const config = (data.success && data.data) ? data.data : fallbackPopupNotice;
+      setNoticeConfig(config);
 
-        if (data.data.enabled && (forceShow || hiddenDate !== todayStr)) {
-          setIsNoticePopupOpen(true);
-        }
+      let hiddenDate = null;
+      try {
+        hiddenDate = localStorage.getItem('hide_notice_popup_until');
+      } catch (e) {
+        console.warn('localStorage not accessible:', e);
+      }
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+      
+      // KakaoTalk in-app browser or shared link detection
+      const isKakaoOrExternal = 
+        window.location.search.includes('kakao') || 
+        window.location.search.includes('utm_') || 
+        navigator.userAgent.toLowerCase().includes('kakaotalk') ||
+        window.location.hash.includes('notice');
+
+      // If notice is enabled and (forceShow OR KakaoTalk shared link OR not hidden today)
+      if (config.enabled && (forceShow || isKakaoOrExternal || hiddenDate !== todayStr)) {
+        setIsNoticePopupOpen(true);
       }
     } catch (err) {
       console.error('Failed to load popup notice:', err);
+      // Fallback popup display
+      setNoticeConfig(fallbackPopupNotice);
+      setIsNoticePopupOpen(true);
     }
   };
 
   useEffect(() => {
     fetchNoticeConfig();
+
+    const handleNoticeUpdated = () => {
+      try {
+        localStorage.removeItem('hide_notice_popup_until');
+      } catch (e) {
+        console.warn('localStorage clear failed:', e);
+      }
+      fetchNoticeConfig(true);
+    };
+
+    window.addEventListener('notice_popup_updated', handleNoticeUpdated);
+    return () => window.removeEventListener('notice_popup_updated', handleNoticeUpdated);
   }, []);
 
   const handleHideToday = () => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    localStorage.setItem('hide_notice_popup_until', todayStr);
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      localStorage.setItem('hide_notice_popup_until', todayStr);
+    } catch (e) {
+      console.warn('localStorage setItem failed:', e);
+    }
     setIsNoticePopupOpen(false);
   };
 
@@ -108,6 +190,7 @@ export default function App() {
         onNavigate={handleNavigate}
         onOpenAiModal={() => setIsAiModalOpen(true)}
         onOpenAdminModal={() => setIsAdminModalOpen(true)}
+        pendingInquiryCount={pendingInquiryCount}
       />
 
       {/* Main Multi-Page Content Router */}
@@ -268,6 +351,7 @@ export default function App() {
             <InquirySection
               preselectedCourse={preselectedCourseForInquiry}
               onOpenAdminModal={() => setIsAdminModalOpen(true)}
+              pendingInquiryCount={pendingInquiryCount}
             />
           </div>
         )}
@@ -327,6 +411,23 @@ export default function App() {
           fetchNoticeConfig(true);
         }}
       />
+
+      {/* Floating Notice Popup Button */}
+      {!isNoticePopupOpen && noticeConfig && noticeConfig.enabled && (
+        <button
+          type="button"
+          onClick={() => setIsNoticePopupOpen(true)}
+          className="fixed bottom-20 lg:bottom-6 right-4 z-40 px-3.5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-xs rounded-full shadow-2xl border-2 border-white flex items-center gap-2 transition-all transform hover:scale-105 active:scale-95 cursor-pointer group"
+          title="개강 공지 팝업 다시보기"
+        >
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-200 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-slate-950"></span>
+          </span>
+          <Megaphone className="w-4 h-4 text-slate-950 fill-slate-950" />
+          <span>8~9월 개강공지</span>
+        </button>
+      )}
 
       {/* Mobile Fixed Quick Action Bar */}
       <MobileQuickBar

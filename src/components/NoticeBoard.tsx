@@ -12,7 +12,7 @@ export const NoticeBoard: React.FC = () => {
     try {
       const res = await fetch('/api/notices');
       const data = await res.json();
-      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+      if (data.success && Array.isArray(data.data)) {
         setNotices(data.data);
       }
     } catch (err) {

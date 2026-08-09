@@ -35,7 +35,7 @@ export const HomeHub: React.FC<HomeHubProps> = ({
     try {
       const res = await fetch('/api/notices');
       const data = await res.json();
-      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+      if (data.success && Array.isArray(data.data)) {
         setBoardNotices(data.data);
       }
     } catch (err) {

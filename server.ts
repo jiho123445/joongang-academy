@@ -34,6 +34,8 @@ export interface PopularCourse {
   badge: string;
   badgeColor?: string;
   timeSlot: string;
+  startDate?: string;
+  createdAt?: string;
   title: string;
   description: string;
 }
@@ -44,6 +46,8 @@ const defaultPopularCourses: PopularCourse[] = [
     badge: '모집중 · 국비지원',
     badgeColor: 'blue',
     timeSlot: '09:30 - 12:30',
+    startDate: '2026-09-01',
+    createdAt: '2026-08-01',
     title: '컴퓨터활용능력 1급/2급 (실기)',
     description: '자부담금 0원~최대 100% 정부지원',
   },
@@ -52,6 +56,8 @@ const defaultPopularCourses: PopularCourse[] = [
     badge: '모집중 · 인기',
     badgeColor: 'emerald',
     timeSlot: '14:00 - 17:00',
+    startDate: '2026-09-01',
+    createdAt: '2026-08-01',
     title: '전산세무회계 & KcLep 실무',
     description: '회계원리부터 세무 신고 실무 원스톱',
   },
@@ -60,6 +66,8 @@ const defaultPopularCourses: PopularCourse[] = [
     badge: '추천 · 오전반',
     badgeColor: 'amber',
     timeSlot: '10:00 - 12:00',
+    startDate: '수시 개강',
+    createdAt: '2026-08-01',
     title: '어르신 스마트폰 & 타자·컴퓨터 기초',
     description: '친절한 1:1 눈높이 특별지도',
   },
@@ -322,9 +330,10 @@ async function startServer() {
   app.put("/api/notices/:id", (req, res) => {
     try {
       const { id } = req.params;
+      const targetId = decodeURIComponent(String(id)).trim();
       const { title, date, category, content, important } = req.body;
       let notices = getBoardNotices();
-      const index = notices.findIndex((n) => n.id === id);
+      const index = notices.findIndex((n) => String(n.id).trim() === targetId);
 
       if (index === -1) {
         return res.status(404).json({ success: false, error: "해당 공지를 찾을 수 없습니다." });
@@ -350,14 +359,17 @@ async function startServer() {
   app.delete("/api/notices/:id", (req, res) => {
     try {
       const { id } = req.params;
+      const targetId = decodeURIComponent(String(id)).trim();
       let notices = getBoardNotices();
-      const filtered = notices.filter((n) => n.id !== id);
+      const initialCount = notices.length;
+      const filtered = notices.filter((n) => String(n.id).trim() !== targetId);
 
-      if (filtered.length === notices.length) {
+      if (filtered.length === initialCount) {
         return res.status(404).json({ success: false, error: "삭제할 공지를 찾을 수 없습니다." });
       }
 
       saveBoardNotices(filtered);
+      console.log(`공지사항 삭제 성공 (ID: ${id})`);
       return res.json({ success: true, message: "공지가 삭제되었습니다." });
     } catch (err) {
       console.error("Failed to delete notice:", err);
@@ -373,22 +385,25 @@ async function startServer() {
 
   app.post("/api/popular-courses", (req, res) => {
     try {
-      const { badge, badgeColor, timeSlot, title, description } = req.body;
+      const { badge, badgeColor, timeSlot, startDate, title, description } = req.body;
       if (!title) {
         return res.status(400).json({ success: false, error: "강좌명은 필수입니다." });
       }
 
+      const today = new Date().toISOString().split('T')[0];
       const courses = getPopularCourses();
       const newCourse: PopularCourse = {
         id: `pop-${Date.now()}`,
         badge: badge ? String(badge) : '모집중',
         badgeColor: badgeColor ? String(badgeColor) : 'blue',
         timeSlot: timeSlot ? String(timeSlot) : '시간 문의',
+        startDate: startDate ? String(startDate) : '수시 개강',
+        createdAt: today,
         title: String(title),
         description: description ? String(description) : '',
       };
 
-      courses.push(newCourse);
+      courses.unshift(newCourse);
       savePopularCourses(courses);
 
       return res.json({ success: true, message: "인기 강좌가 추가되었습니다.", data: newCourse });
@@ -401,9 +416,10 @@ async function startServer() {
   app.put("/api/popular-courses/:id", (req, res) => {
     try {
       const { id } = req.params;
-      const { badge, badgeColor, timeSlot, title, description } = req.body;
+      const targetId = decodeURIComponent(String(id)).trim();
+      const { badge, badgeColor, timeSlot, startDate, title, description } = req.body;
       let courses = getPopularCourses();
-      const index = courses.findIndex((c) => c.id === id);
+      const index = courses.findIndex((c) => String(c.id).trim() === targetId);
 
       if (index === -1) {
         return res.status(404).json({ success: false, error: "해당 강좌를 찾을 수 없습니다." });
@@ -414,6 +430,7 @@ async function startServer() {
         badge: badge !== undefined ? String(badge) : courses[index].badge,
         badgeColor: badgeColor !== undefined ? String(badgeColor) : courses[index].badgeColor,
         timeSlot: timeSlot !== undefined ? String(timeSlot) : courses[index].timeSlot,
+        startDate: startDate !== undefined ? String(startDate) : courses[index].startDate,
         title: title !== undefined ? String(title) : courses[index].title,
         description: description !== undefined ? String(description) : courses[index].description,
       };
@@ -429,10 +446,12 @@ async function startServer() {
   app.delete("/api/popular-courses/:id", (req, res) => {
     try {
       const { id } = req.params;
+      const targetId = decodeURIComponent(String(id)).trim();
       let courses = getPopularCourses();
-      const filtered = courses.filter((c) => c.id !== id);
+      const initialCount = courses.length;
+      const filtered = courses.filter((c) => String(c.id).trim() !== targetId);
 
-      if (filtered.length === courses.length) {
+      if (filtered.length === initialCount) {
         return res.status(404).json({ success: false, error: "삭제할 강좌를 찾을 수 없습니다." });
       }
 
@@ -514,10 +533,11 @@ async function startServer() {
   // PUT update inquiry status / admin notes
   app.put("/api/inquiries/:id", (req, res) => {
     const { id } = req.params;
+    const targetId = decodeURIComponent(String(id)).trim();
     const { status, adminNotes } = req.body;
 
     const inquiries = getInquiries();
-    const index = inquiries.findIndex((r) => r.id === id);
+    const index = inquiries.findIndex((r) => String(r.id).trim() === targetId);
 
     if (index === -1) {
       return res.status(404).json({ success: false, error: "해당 신청 내역을 찾을 수 없습니다." });
@@ -534,15 +554,16 @@ async function startServer() {
   // DELETE inquiry
   app.delete("/api/inquiries/:id", (req, res) => {
     const { id } = req.params;
+    const targetId = decodeURIComponent(String(id)).trim();
     let inquiries = getInquiries();
     const initialCount = inquiries.length;
-    inquiries = inquiries.filter((r) => r.id !== id);
+    const filtered = inquiries.filter((r) => String(r.id).trim() !== targetId);
 
-    if (inquiries.length === initialCount) {
+    if (filtered.length === initialCount) {
       return res.status(404).json({ success: false, error: "삭제할 내역을 찾지 못했습니다." });
     }
 
-    saveInquiries(inquiries);
+    saveInquiries(filtered);
     return res.json({ success: true, message: "신청 내역이 삭제되었습니다." });
   });
 

@@ -7,9 +7,10 @@ interface HeaderProps {
   onNavigate: (sectionId: string) => void;
   onOpenAiModal: () => void;
   onOpenAdminModal?: () => void;
+  pendingInquiryCount?: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpenAiModal, onOpenAdminModal }) => {
+export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpenAiModal, onOpenAdminModal, pendingInquiryCount = 0 }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -83,22 +84,34 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
             className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group shrink-0"
             id="header-logo"
           >
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-200 group-hover:bg-blue-700 transition-colors shrink-0">
-              <GraduationCap className="w-5 h-5 text-white" />
-            </div>
-            <div className="shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="font-extrabold text-base sm:text-lg lg:text-xl text-slate-800 tracking-tight leading-none group-hover:text-blue-600 transition-colors whitespace-nowrap">
-                  홍천 중앙정보처리학원
-                </span>
-                <span className="bg-blue-100/80 backdrop-blur-sm text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200 whitespace-nowrap">
-                  SINCE 1999
-                </span>
+            <img
+              src="/top_logo.png"
+              alt="홍천 중앙정보처리학원 로고"
+              className="h-11 sm:h-13 w-auto object-contain max-w-[280px] sm:max-w-[380px]"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const fallbackEl = document.getElementById('header-logo-fallback');
+                if (fallbackEl) fallbackEl.style.display = 'flex';
+              }}
+            />
+            <div id="header-logo-fallback" className="hidden items-center gap-2.5 sm:gap-3 shrink-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-200 group-hover:bg-blue-700 transition-colors shrink-0">
+                <GraduationCap className="w-5 h-5 text-white" />
               </div>
-              <p className="hidden xl:block text-[11px] text-slate-500 mt-0.5 font-medium whitespace-nowrap">
-                고용노동부 국비지원 지정 IT·컴퓨터 교육기관
-              </p>
+              <div className="shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-base sm:text-lg lg:text-xl text-slate-800 tracking-tight leading-none group-hover:text-blue-600 transition-colors whitespace-nowrap">
+                    홍천 중앙정보처리학원
+                  </span>
+                </div>
+                <p className="hidden xl:block text-[11px] text-slate-500 mt-0.5 font-medium whitespace-nowrap">
+                  고용노동부 국비지원 지정 IT·컴퓨터 교육기관
+                </p>
+              </div>
             </div>
+            <span className="bg-blue-100/80 backdrop-blur-sm text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200 whitespace-nowrap hidden md:inline-block">
+              SINCE 1999
+            </span>
           </div>
 
           {/* Desktop Navigation Links - Single Line Strict */}
@@ -127,11 +140,31 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
             {onOpenAdminModal && (
               <button
                 onClick={onOpenAdminModal}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-emerald-400 font-black text-xs border border-slate-700 shadow-md transition-all whitespace-nowrap cursor-pointer"
-                title="원장님/관리자 모드 (수강신청, 팝업공지, 공지사항, 실시간 인기강좌 관리)"
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-emerald-400 font-black text-xs border shadow-md transition-all whitespace-nowrap cursor-pointer relative ${
+                  pendingInquiryCount > 0
+                    ? 'border-red-500 ring-2 ring-red-500/40 text-white'
+                    : 'border-slate-700'
+                }`}
+                title={
+                  pendingInquiryCount > 0
+                    ? `🚨 신규 수강 상담 신청 ${pendingInquiryCount}건 대기 중!`
+                    : '원장님/관리자 모드 (수강신청, 팝업공지, 공지사항, 실시간 인기강좌 관리)'
+                }
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                {pendingInquiryCount > 0 ? (
+                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                  </span>
+                ) : (
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                )}
                 <span>관리자 모드</span>
+                {pendingInquiryCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-red-600 text-white font-black text-[10px] shadow animate-pulse">
+                    신청 {pendingInquiryCount}건
+                  </span>
+                )}
               </button>
             )}
             <button
@@ -222,10 +255,26 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
                 setIsMobileMenuOpen(false);
                 onOpenAdminModal();
               }}
-              className="w-full mt-2 py-2.5 bg-slate-900 text-emerald-400 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 shadow"
+              className={`w-full mt-2 py-2.5 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 border shadow transition-all ${
+                pendingInquiryCount > 0
+                  ? 'bg-slate-900 text-white border-red-500 ring-2 ring-red-500/30'
+                  : 'bg-slate-900 text-emerald-400 border-slate-700'
+              }`}
             >
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              {pendingInquiryCount > 0 ? (
+                <span className="relative flex h-3 w-3 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+                </span>
+              ) : (
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              )}
               <span>원장님/관리자 모드</span>
+              {pendingInquiryCount > 0 && (
+                <span className="px-2 py-0.5 bg-red-600 text-white font-black text-[10px] rounded-full animate-pulse">
+                  신청 {pendingInquiryCount}건 대기
+                </span>
+              )}
             </button>
           )}
         </div>

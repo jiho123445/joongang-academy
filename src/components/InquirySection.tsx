@@ -6,9 +6,10 @@ import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, S
 interface InquirySectionProps {
   preselectedCourse?: string;
   onOpenAdminModal?: () => void;
+  pendingInquiryCount?: number;
 }
 
-export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCourse, onOpenAdminModal }) => {
+export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCourse, onOpenAdminModal, pendingInquiryCount = 0 }) => {
   const [formData, setFormData] = useState<ConsultationForm>({
     name: '',
     phone: '',
@@ -49,6 +50,7 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
       const data = await response.json();
 
       if (data.success) {
+        window.dispatchEvent(new Event('inquiry_submitted'));
         setStatusMessage({
           type: 'success',
           text: data.message || `${formData.name}님의 상담 신청이 성공적으로 접수되었습니다! 빠르게 확인 후 안내 연락을 드리겠습니다.`,
@@ -67,6 +69,7 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
       }
     } catch (err) {
       // Client-side fallback if server offline
+      window.dispatchEvent(new Event('inquiry_submitted'));
       setStatusMessage({
         type: 'success',
         text: `${formData.name}님의 수강 신청이 완료되었습니다. 확인 후 담당자(033-433-1926)가 바로 연락드리겠습니다!`,
@@ -136,10 +139,24 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
                   <button
                     type="button"
                     onClick={onOpenAdminModal}
-                    className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all group"
+                    className={`w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all group ${
+                      pendingInquiryCount > 0 ? 'border-2 border-red-500 ring-2 ring-red-500/30' : ''
+                    }`}
                   >
-                    <FileSpreadsheet className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    {pendingInquiryCount > 0 ? (
+                      <span className="relative flex h-3 w-3 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+                      </span>
+                    ) : (
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    )}
                     <span>신청 내역 관리 & 엑셀 다운로드 (원장님용)</span>
+                    {pendingInquiryCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-xs font-black animate-pulse">
+                        신규대기 {pendingInquiryCount}건
+                      </span>
+                    )}
                   </button>
                 </div>
               )}

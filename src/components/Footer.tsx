@@ -15,13 +15,25 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           
           {/* Academy Brand Column */}
           <div className="md:col-span-5 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-xl shadow-lg shadow-blue-500/20">
-                <GraduationCap className="w-6 h-6 text-blue-100" />
-              </div>
-              <div>
-                <span className="font-black text-lg text-white">홍천 중앙정보처리학원</span>
-                <p className="text-xs text-slate-400">고용노동부 지정 국민내일배움카드 교육기관</p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <img
+                src="/top_logo.png"
+                alt="홍천 중앙정보처리학원 로고"
+                className="h-14 sm:h-16 md:h-20 w-auto object-contain bg-white p-2.5 sm:p-3 rounded-2xl shadow-xl border border-slate-100 max-w-full sm:max-w-[420px]"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  const fallbackEl = document.getElementById('footer-logo-fallback');
+                  if (fallbackEl) fallbackEl.style.display = 'flex';
+                }}
+              />
+              <div id="footer-logo-fallback" className="hidden items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-2xl shadow-lg shadow-blue-500/20">
+                  <GraduationCap className="w-7 h-7 text-blue-100" />
+                </div>
+                <div>
+                  <span className="font-black text-xl text-white">홍천 중앙정보처리학원</span>
+                  <p className="text-xs text-slate-400">고용노동부 지정 국민내일배움카드 교육기관</p>
+                </div>
               </div>
             </div>
 

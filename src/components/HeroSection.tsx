@@ -7,6 +7,8 @@ export interface PopularCourseItem {
   badge: string;
   badgeColor?: string;
   timeSlot: string;
+  startDate?: string;
+  createdAt?: string;
   title: string;
   description: string;
 }
@@ -29,6 +31,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
       badge: '모집중 · 국비지원',
       badgeColor: 'blue',
       timeSlot: '09:30 - 12:30',
+      startDate: '2026-09-01 개강',
+      createdAt: '2026-08-01',
       title: '컴퓨터활용능력 1급/2급 (실기)',
       description: '자부담금 0원~최대 100% 정부지원',
     },
@@ -37,6 +41,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
       badge: '모집중 · 인기',
       badgeColor: 'emerald',
       timeSlot: '14:00 - 17:00',
+      startDate: '2026-09-01 개강',
+      createdAt: '2026-08-01',
       title: '전산세무회계 & KcLep 실무',
       description: '회계원리부터 세무 신고 실무 원스톱',
     },
@@ -45,6 +51,8 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
       badge: '추천 · 오전반',
       badgeColor: 'amber',
       timeSlot: '10:00 - 12:00',
+      startDate: '수시 개강',
+      createdAt: '2026-08-01',
       title: '어르신 스마트폰 & 타자·컴퓨터 기초',
       description: '친절한 1:1 눈높이 특별지도',
     },
@@ -54,7 +62,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
     try {
       const res = await fetch('/api/popular-courses');
       const data = await res.json();
-      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+      if (data.success && Array.isArray(data.data)) {
         setPopularCourses(data.data);
       }
     } catch (err) {
@@ -227,14 +235,30 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                     <div key={item.id || index} className={`p-4 bg-white/80 rounded-2xl border ${colorClasses.border} shadow-sm transition-all hover:scale-[1.01]`}>
                       <div className="flex justify-between items-center mb-1">
                         <span className={`text-xs font-bold ${colorClasses.text}`}>{item.badge}</span>
-                        <span className="text-xs text-slate-400 font-mono">{item.timeSlot}</span>
+                        <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+                          {item.startDate && (
+                            <span className="font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                              개강: {item.startDate}
+                            </span>
+                          )}
+                          <span>{item.timeSlot}</span>
+                        </div>
                       </div>
                       <h3 className="font-bold text-slate-800 text-sm">
                         {item.title}
                       </h3>
-                      {item.description && (
-                        <p className="text-xs text-slate-500 mt-1">{item.description}</p>
-                      )}
+                      <div className="flex items-center justify-between mt-1 text-xs text-slate-500">
+                        {item.description ? (
+                          <p>{item.description}</p>
+                        ) : (
+                          <span />
+                        )}
+                        {item.createdAt && (
+                          <span className="text-[10px] text-slate-400 shrink-0 ml-2">
+                            등록일: {item.createdAt}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
