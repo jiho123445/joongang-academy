@@ -1,6 +1,7 @@
 import React from 'react';
 import { ACADEMY_INFO } from '../data/coursesData';
-import { GraduationCap, Phone, MapPin, Mail, Printer, ExternalLink } from 'lucide-react';
+import { Phone, MapPin, Mail, Printer, ExternalLink } from 'lucide-react';
+import { AcademyLogoSeal } from './AcademyLogoSeal';
 
 interface FooterProps {
   onNavigate: (sectionId: string) => void;
@@ -15,25 +16,11 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           
           {/* Academy Brand Column */}
           <div className="md:col-span-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <img
-                src="/top_logo.png"
-                alt="홍천 중앙정보처리학원 로고"
-                className="h-14 sm:h-16 md:h-20 w-auto object-contain bg-white p-2.5 sm:p-3 rounded-2xl shadow-xl border border-slate-100 max-w-full sm:max-w-[420px]"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  const fallbackEl = document.getElementById('footer-logo-fallback');
-                  if (fallbackEl) fallbackEl.style.display = 'flex';
-                }}
-              />
-              <div id="footer-logo-fallback" className="hidden items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-2xl shadow-lg shadow-blue-500/20">
-                  <GraduationCap className="w-7 h-7 text-blue-100" />
-                </div>
-                <div>
-                  <span className="font-black text-xl text-white">홍천 중앙정보처리학원</span>
-                  <p className="text-xs text-slate-400">고용노동부 지정 국민내일배움카드 교육기관</p>
-                </div>
+            <div className="flex items-center gap-3">
+              <AcademyLogoSeal className="w-12 h-12 sm:w-14 sm:h-14 bg-white rounded-full p-0.5 shadow-md" />
+              <div>
+                <span className="font-black text-lg sm:text-xl text-white block">홍천 중앙정보처리학원</span>
+                <p className="text-xs text-slate-300 mt-0.5 font-medium">고용노동부 국비지원 지정 IT·컴퓨터 교육기관</p>
               </div>
             </div>
 
