@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Phone, Award, CreditCard, Sparkles, Search, ChevronRight, CheckCircle2, Users, Laptop, Bot } from 'lucide-react';
 import { ACADEMY_INFO } from '../data/coursesData';
-import { subscribePopularCoursesFromFirestore } from '../lib/firestoreService';
 
 export interface PopularCourseItem {
   id: string;
@@ -59,16 +58,23 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
     },
   ]);
 
-  useEffect(() => {
-    const unsub = subscribePopularCoursesFromFirestore((data) => {
-      if (Array.isArray(data) && data.length > 0) {
-        setPopularCourses(data as PopularCourseItem[]);
+  const fetchPopularCourses = async () => {
+    try {
+      const res = await fetch('/api/popular-courses');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setPopularCourses(data.data);
       }
-    });
+    } catch (err) {
+      console.error('Failed to fetch popular courses:', err);
+    }
+  };
 
-    return () => {
-      unsub();
-    };
+  useEffect(() => {
+    fetchPopularCourses();
+    const handleUpdate = () => fetchPopularCourses();
+    window.addEventListener('popular_courses_updated', handleUpdate);
+    return () => window.removeEventListener('popular_courses_updated', handleUpdate);
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {

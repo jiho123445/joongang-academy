@@ -124,7 +124,7 @@ export const NationalSupportGuide: React.FC<NationalSupportGuideProps> = ({ onNa
                     <button
                       key={item.id}
                       onClick={() => setJobStatus(item.id)}
-                      className={`py-2.5 px-3 rounded-2xl text-xs font-bold border text-center transition-all cursor-pointer ${
+                      className={`py-2.5 px-3 rounded-2xl text-xs font-bold border text-center transition-all ${
                         jobStatus === item.id
                           ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-200'
                           : 'bg-white/60 text-slate-700 border-slate-200 hover:bg-white'
@@ -148,7 +148,7 @@ export const NationalSupportGuide: React.FC<NationalSupportGuideProps> = ({ onNa
                     <button
                       key={item.id}
                       onClick={() => setIncomeLevel(item.id)}
-                      className={`py-2.5 px-3 rounded-2xl text-xs font-bold border text-center transition-all cursor-pointer ${
+                      className={`py-2.5 px-3 rounded-2xl text-xs font-bold border text-center transition-all ${
                         incomeLevel === item.id
                           ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-200'
                           : 'bg-white/60 text-slate-700 border-slate-200 hover:bg-white'
@@ -162,7 +162,7 @@ export const NationalSupportGuide: React.FC<NationalSupportGuideProps> = ({ onNa
 
               <button
                 onClick={handleCalculateEligibility}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-emerald-200 transition-colors cursor-pointer"
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-emerald-200 transition-colors"
               >
                 진단 결과 확인하기
               </button>
@@ -175,7 +175,7 @@ export const NationalSupportGuide: React.FC<NationalSupportGuideProps> = ({ onNa
                   </div>
                   <button
                     onClick={onNavigateToInquiry}
-                    className="mt-2 w-full py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl text-center shadow cursor-pointer"
+                    className="mt-2 w-full py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl text-center shadow"
                   >
                     이 조건으로 수강 상담 예약하기
                   </button>
