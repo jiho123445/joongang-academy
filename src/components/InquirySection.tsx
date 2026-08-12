@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ConsultationForm } from '../types';
 import { COURSES_DATA, ACADEMY_INFO } from '../data/coursesData';
-import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, Sparkles, FileSpreadsheet } from 'lucide-react';
+import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, Sparkles, FileSpreadsheet, RotateCcw } from 'lucide-react';
+import { submitApplicationToFirestore, formatReceiptNumber } from '../lib/firestoreService';
 
 interface InquirySectionProps {
   preselectedCourse?: string;
@@ -10,16 +11,17 @@ interface InquirySectionProps {
 }
 
 export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCourse, onOpenAdminModal, pendingInquiryCount = 0 }) => {
-  const [formData, setFormData] = useState<ConsultationForm>({
+  const getInitialForm = (courseOverride?: string): ConsultationForm => ({
     name: '',
     phone: '',
-    courseInterest: COURSES_DATA[0].title,
+    courseInterest: courseOverride || preselectedCourse || (COURSES_DATA[0] ? COURSES_DATA[0].title : '상담 후 결정'),
     preferredTime: '상관없음',
     hasNaeilCard: '유',
     userCategory: '취업준비생',
     message: '',
   });
 
+  const [formData, setFormData] = useState<ConsultationForm>(() => getInitialForm());
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -29,50 +31,40 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
     }
   }, [preselectedCourse]);
 
+  const handleResetForm = () => {
+    setFormData(getInitialForm());
+    setStatusMessage(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.name.trim() || !formData.phone.trim()) {
-      setStatusMessage({ type: 'error', text: '이름과 연락처(전화번호)를 정확히 입력해 주세요.' });
+      setStatusMessage({ type: 'error', text: '성함과 연락처(전화번호)를 정확히 입력해 주세요.' });
       return;
     }
 
     setIsSubmitting(true);
     setStatusMessage(null);
 
+    const submittedName = formData.name.trim();
+
     try {
-      const response = await fetch('/api/inquiry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        window.dispatchEvent(new Event('inquiry_submitted'));
-        setStatusMessage({
-          type: 'success',
-          text: data.message || `${formData.name}님의 상담 신청이 성공적으로 접수되었습니다! 빠르게 확인 후 안내 연락을 드리겠습니다.`,
-        });
-        setFormData({
-          name: '',
-          phone: '',
-          courseInterest: COURSES_DATA[0].title,
-          preferredTime: '상관없음',
-          hasNaeilCard: '유',
-          userCategory: '취업준비생',
-          message: '',
-        });
-      } else {
-        setStatusMessage({ type: 'error', text: data.error || '접수 중 오류가 발생했습니다. 학원 전화(033-433-1926)로 문의해 주세요.' });
-      }
-    } catch (err) {
-      // Client-side fallback if server offline
+      const record = await submitApplicationToFirestore(formData);
       window.dispatchEvent(new Event('inquiry_submitted'));
+      
+      // Reset form input values completely for the next inquiry
+      setFormData(getInitialForm());
+
       setStatusMessage({
         type: 'success',
-        text: `${formData.name}님의 수강 신청이 완료되었습니다. 확인 후 담당자(033-433-1926)가 바로 연락드리겠습니다!`,
+        text: `${submittedName}님의 수강 신청이 성공적으로 접수되었습니다! (접수번호: ${formatReceiptNumber(record)}) 빠르게 확인 후 안내 연락을 드리겠습니다.`,
+      });
+    } catch (err) {
+      console.error('Firestore application submission failed:', err);
+      setStatusMessage({
+        type: 'error',
+        text: '접수 중 오류가 발생했습니다. 잠시 후 다시 시도하시거나 학원 전화(033-433-1926)로 문의해 주세요.',
       });
     } finally {
       setIsSubmitting(false);
@@ -165,9 +157,20 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
 
           {/* Right Column: Form in Frosted Glass */}
           <div className="lg:col-span-7 bg-white/60 backdrop-blur-xl text-slate-900 rounded-3xl p-6 sm:p-8 shadow-2xl border border-white/80">
-            <h3 className="text-xl font-black text-slate-900 mb-1">
-              온라인 수강 문의 작성
-            </h3>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <h3 className="text-xl font-black text-slate-900">
+                온라인 수강 문의 작성
+              </h3>
+              <button
+                type="button"
+                onClick={handleResetForm}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/80 hover:bg-slate-200 text-slate-600 hover:text-slate-900 font-bold text-xs transition-all cursor-pointer shadow-xs border border-slate-200/60"
+                title="작성 중인 입력 내용 초기화"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                <span>입력 초기화</span>
+              </button>
+            </div>
             <p className="text-xs text-slate-500 mb-6">
               * 표시는 필수 입력 항목입니다. 작성하신 정보는 상담 목적으로만 사용됩니다.
             </p>
@@ -186,6 +189,8 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="홍길동"
+                    lang="ko"
+                    style={{ imeMode: 'active' }}
                     className="w-full p-3.5 rounded-2xl bg-white/80 backdrop-blur-sm border border-slate-200/80 text-xs sm:text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none shadow-sm"
                   />
                 </div>
@@ -301,18 +306,29 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
 
               {statusMessage && (
                 <div
-                  className={`p-4 rounded-2xl text-xs sm:text-sm font-semibold flex items-center gap-2 ${
+                  className={`p-4 rounded-2xl text-xs sm:text-sm font-semibold flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                     statusMessage.type === 'success'
                       ? 'bg-emerald-50/90 text-emerald-800 border border-emerald-200'
                       : 'bg-red-50/90 text-red-800 border border-red-200'
                   }`}
                 >
-                  {statusMessage.type === 'success' ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                  <div className="flex items-center gap-2">
+                    {statusMessage.type === 'success' ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                    )}
+                    <span>{statusMessage.text}</span>
+                  </div>
+                  {statusMessage.type === 'success' && (
+                    <button
+                      type="button"
+                      onClick={() => setStatusMessage(null)}
+                      className="shrink-0 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer text-center"
+                    >
+                      새 수강 문의 작성하기
+                    </button>
                   )}
-                  <span>{statusMessage.text}</span>
                 </div>
               )}
 

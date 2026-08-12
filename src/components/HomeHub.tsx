@@ -13,9 +13,15 @@ import {
   Phone,
   Clock,
   ShieldCheck,
+  Flame,
 } from 'lucide-react';
-import { COURSES_DATA, ACADEMY_INFO, NOTICES_DATA } from '../data/coursesData';
+import { COURSES_DATA, ACADEMY_INFO } from '../data/coursesData';
 import { Notice } from '../types';
+import {
+  subscribeNoticesFromFirestore,
+  subscribePopularCoursesFromFirestore,
+} from '../lib/firestoreService';
+import { PopularCourseAdminItem } from './InquiryAdminModal';
 
 interface HomeHubProps {
   onNavigate: (pageId: string) => void;
@@ -28,27 +34,15 @@ export const HomeHub: React.FC<HomeHubProps> = ({
   onSelectCategory,
   onSelectCourseForInquiry,
 }) => {
-  const featuredCourses = COURSES_DATA.slice(0, 3);
-  const [boardNotices, setBoardNotices] = useState<Notice[]>(NOTICES_DATA);
-
-  const fetchNotices = async () => {
-    try {
-      const res = await fetch('/api/notices');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setBoardNotices(data.data);
-      }
-    } catch (err) {
-      console.error('Failed to load notices in HomeHub:', err);
-    }
-  };
+  const [boardNotices, setBoardNotices] = useState<Notice[]>([]);
+  const [popularCourses, setPopularCourses] = useState<PopularCourseAdminItem[]>([]);
 
   useEffect(() => {
-    fetchNotices();
-    const handleUpdate = () => fetchNotices();
-    window.addEventListener('board_notices_updated', handleUpdate);
+    const unsubNotices = subscribeNoticesFromFirestore((data) => setBoardNotices(data));
+    const unsubPopular = subscribePopularCoursesFromFirestore((data) => setPopularCourses(data));
     return () => {
-      window.removeEventListener('board_notices_updated', handleUpdate);
+      unsubNotices();
+      unsubPopular();
     };
   }, []);
 
@@ -175,42 +169,52 @@ export const HomeHub: React.FC<HomeHubProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {featuredCourses.map((course) => (
-              <div
-                key={course.id}
-                className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white/90 shadow-md flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold text-xs">
-                      {course.category}
-                    </span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs">
-                      {course.subsidyRate}
-                    </span>
-                  </div>
-                  <h3 className="text-lg font-black text-slate-900 mb-2">
-                    {course.title}
-                  </h3>
-                  <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-4">
-                    {course.description}
-                  </p>
-                </div>
+            {(popularCourses.length > 0 ? popularCourses.slice(0, 3) : COURSES_DATA.slice(0, 3)).map((item: any) => {
+              const isFirestorePop = Boolean(item.badge || item.timeSlot);
+              const title = item.title || item.courseTitle;
+              const badge = item.badge || item.category || '인기강좌';
+              const timeOrDuration = item.timeSlot ? `시간: ${item.timeSlot}` : `수강 기간: ${item.duration}`;
+              const desc = item.description || item.summary || '';
 
-                <div className="pt-4 border-t border-slate-100 space-y-2">
-                  <div className="flex justify-between items-center text-xs text-slate-500 font-medium">
-                    <span>수강 기간: {course.duration}</span>
-                    <span className="text-blue-600 font-bold">{course.selfPayEstimate}</span>
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 border border-white/90 shadow-md flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold text-xs">
+                        {badge}
+                      </span>
+                      {item.startDate && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs">
+                          {item.startDate}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-lg font-black text-slate-900 mb-2">
+                      {title}
+                    </h3>
+                    <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-4">
+                      {desc}
+                    </p>
                   </div>
-                  <button
-                    onClick={() => onSelectCourseForInquiry(course.title)}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all"
-                  >
-                    이 과정 문의하기
-                  </button>
+
+                  <div className="pt-4 border-t border-slate-100 space-y-2">
+                    <div className="flex justify-between items-center text-xs text-slate-500 font-medium">
+                      <span>{timeOrDuration}</span>
+                      <span className="text-blue-600 font-bold">{item.selfPayEstimate || '국비지원 가능'}</span>
+                    </div>
+                    <button
+                      onClick={() => onSelectCourseForInquiry(title)}
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
+                    >
+                      이 과정 문의하기
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

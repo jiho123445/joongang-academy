@@ -4,6 +4,24 @@ import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import {
+  subscribeApplicationsFromFirestore,
+  updateApplicationStatusInFirestore,
+  deleteApplicationFromFirestore,
+  batchDeleteApplicationsFromFirestore,
+  subscribeOpeningPopupFromFirestore,
+  saveOpeningPopupToFirestore,
+  subscribeNoticesFromFirestore,
+  addNoticeToFirestore,
+  updateNoticeInFirestore,
+  deleteNoticeFromFirestore,
+  subscribePopularCoursesFromFirestore,
+  addPopularCourseToFirestore,
+  updatePopularCourseInFirestore,
+  deletePopularCourseFromFirestore,
+  DEFAULT_OPENING_POPUP,
+  formatReceiptNumber,
+} from '../lib/firestoreService';
+import {
   X,
   Download,
   Search,
@@ -154,34 +172,55 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     });
   };
 
-  const fetchInquiries = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/inquiries');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setInquiries(data.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch inquiries:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // --- Firestore Handlers & Real-time Subscriptions ---
 
-  const fetchNoticeConfig = async () => {
-    try {
-      const res = await fetch('/api/popup-notice');
-      const data = await res.json();
-      if (data.success && data.data) {
-        const cfg = data.data;
-        if (!cfg.schedules || !Array.isArray(cfg.schedules) || cfg.schedules.length === 0) {
-          cfg.schedules = defaultSchedules;
-        }
-        setNoticeConfig(cfg);
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setPinInput('');
+    setPinError(false);
+    setSelectedIds([]);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
       }
-    } catch (err) {
-      console.error('Failed to fetch notice config:', err);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    const unsubApps = subscribeApplicationsFromFirestore((records) => {
+      setInquiries(records);
+      setLoading(false);
+    });
+
+    const unsubPopup = subscribeOpeningPopupFromFirestore((cfg) => {
+      setNoticeConfig(cfg);
+    });
+
+    const unsubNotices = subscribeNoticesFromFirestore((data) => {
+      setBoardNotices(data);
+    });
+
+    const unsubPopular = subscribePopularCoursesFromFirestore((data) => {
+      setPopularCourses(data);
+    });
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      unsubApps();
+      unsubPopup();
+      unsubNotices();
+      unsubPopular();
+    };
+  }, [isOpen, onClose]);
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pinInput.trim() === '4001') {
+      setIsAuthenticated(true);
+      setPinError(false);
+    } else {
+      setPinError(true);
     }
   };
 
@@ -228,20 +267,13 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
         setNoticeConfig(updatedConfig);
 
         try {
-          const res = await fetch('/api/popup-notice', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updatedConfig),
-          });
-          const data = await res.json();
-          if (data.success) {
-            setNoticeSuccessMsg('개강 과정 항목이 삭제되고 실시간으로 반영되었습니다.');
-            window.dispatchEvent(new Event('notice_popup_updated'));
-            if (onNoticeUpdated) onNoticeUpdated();
-            setTimeout(() => setNoticeSuccessMsg(''), 4000);
-          }
+          await saveOpeningPopupToFirestore(updatedConfig);
+          setNoticeSuccessMsg('개강 과정 항목이 삭제되고 Firestore DB에 실시간 반영되었습니다.');
+          window.dispatchEvent(new Event('notice_popup_updated'));
+          if (onNoticeUpdated) onNoticeUpdated();
+          setTimeout(() => setNoticeSuccessMsg(''), 4000);
         } catch (err) {
-          console.error('Failed to auto-save schedule deletion:', err);
+          console.error('Failed to save schedule deletion in Firestore:', err);
         }
       }
     );
@@ -252,18 +284,6 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       ...prev,
       schedules: defaultSchedules,
     }));
-  };
-
-  const fetchBoardNotices = async () => {
-    try {
-      const res = await fetch('/api/notices');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setBoardNotices(data.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch board notices:', err);
-    }
   };
 
   const handleOpenCreateNoticeForm = () => {
@@ -294,32 +314,30 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     }
 
     try {
-      const url = editingBoardNotice ? `/api/notices/${encodeURIComponent(editingBoardNotice.id)}` : '/api/notices';
-      const method = editingBoardNotice ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      if (editingBoardNotice) {
+        await updateNoticeInFirestore(editingBoardNotice.id, {
           title: noticeFormTitle,
           category: noticeFormCategory,
           date: noticeFormDate,
           important: noticeFormImportant,
           content: noticeFormContent,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setIsNoticeFormOpen(false);
-        fetchBoardNotices();
-        window.dispatchEvent(new Event('board_notices_updated'));
-        setBoardNoticeSuccessMsg(editingBoardNotice ? '공지사항이 수정되었습니다.' : '새 공지사항이 등록되었습니다.');
-        setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
+        });
       } else {
-        alert(data.error || '저장 중 오류가 발생했습니다.');
+        await addNoticeToFirestore({
+          title: noticeFormTitle,
+          category: noticeFormCategory,
+          date: noticeFormDate,
+          important: noticeFormImportant,
+          content: noticeFormContent,
+        });
       }
+
+      setIsNoticeFormOpen(false);
+      window.dispatchEvent(new Event('board_notices_updated'));
+      setBoardNoticeSuccessMsg(editingBoardNotice ? '공지사항이 Firestore DB에 수정되었습니다.' : '새 공지사항이 Firestore DB에 등록되었습니다.');
+      setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
     } catch (err) {
+      console.error('Notice save failed:', err);
       alert('공지 저장 중 오류가 발생했습니다.');
     }
   };
@@ -330,35 +348,16 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       `[${title}]\n\n이 공지사항 항목을 정말 삭제하시겠습니까?`,
       async () => {
         try {
-          const res = await fetch(`/api/notices/${encodeURIComponent(id)}`, { method: 'DELETE' });
-          const data = await res.json();
-          if (data.success) {
-            setBoardNotices((prev) => prev.filter((item) => String(item.id) !== String(id)));
-            fetchBoardNotices();
-            window.dispatchEvent(new Event('board_notices_updated'));
-            setBoardNoticeSuccessMsg('공지사항이 삭제되었으며 홈페이지에 실시간 반영되었습니다.');
-            setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
-          } else {
-            setBoardNoticeSuccessMsg(data.error || '삭제 중 오류가 발생했습니다.');
-            setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
-          }
+          await deleteNoticeFromFirestore(id);
+          window.dispatchEvent(new Event('board_notices_updated'));
+          setBoardNoticeSuccessMsg('공지사항이 삭제되었으며 홈페이지에 실시간 반영되었습니다.');
+          setTimeout(() => setBoardNoticeSuccessMsg(''), 4000);
         } catch (err) {
           console.error('Failed to delete notice item:', err);
+          alert('삭제 중 오류가 발생했습니다.');
         }
       }
     );
-  };
-
-  const fetchPopularCoursesAdmin = async () => {
-    try {
-      const res = await fetch('/api/popular-courses');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setPopularCourses(data.data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch popular courses:', err);
-    }
   };
 
   const handleOpenCreatePopForm = () => {
@@ -391,33 +390,32 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     }
 
     try {
-      const url = editingPopCourse ? `/api/popular-courses/${encodeURIComponent(editingPopCourse.id)}` : '/api/popular-courses';
-      const method = editingPopCourse ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      if (editingPopCourse) {
+        await updatePopularCourseInFirestore(editingPopCourse.id, {
           title: popFormTitle,
           badge: popFormBadge,
           badgeColor: popFormBadgeColor,
           timeSlot: popFormTimeSlot,
           startDate: popFormStartDate,
           description: popFormDescription,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setIsPopFormOpen(false);
-        fetchPopularCoursesAdmin();
-        window.dispatchEvent(new Event('popular_courses_updated'));
-        setPopSuccessMsg(editingPopCourse ? '실시간 인기 강좌가 수정되었습니다.' : '새 인기 강좌가 등록되었습니다.');
-        setTimeout(() => setPopSuccessMsg(''), 4000);
+        });
       } else {
-        alert(data.error || '저장 중 오류가 발생했습니다.');
+        await addPopularCourseToFirestore({
+          title: popFormTitle,
+          badge: popFormBadge,
+          badgeColor: popFormBadgeColor,
+          timeSlot: popFormTimeSlot,
+          startDate: popFormStartDate,
+          description: popFormDescription,
+        });
       }
+
+      setIsPopFormOpen(false);
+      window.dispatchEvent(new Event('popular_courses_updated'));
+      setPopSuccessMsg(editingPopCourse ? '실시간 인기 강좌가 Firestore DB에 수정되었습니다.' : '새 인기 강좌가 Firestore DB에 등록되었습니다.');
+      setTimeout(() => setPopSuccessMsg(''), 4000);
     } catch (err) {
+      console.error('Popular course save failed:', err);
       alert('저장 중 오류가 발생했습니다.');
     }
   };
@@ -428,47 +426,16 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       `[${title}]\n\n이 인기 강좌 항목을 정말 삭제하시겠습니까?`,
       async () => {
         try {
-          const res = await fetch(`/api/popular-courses/${encodeURIComponent(id)}`, { method: 'DELETE' });
-          const data = await res.json();
-          if (data.success) {
-            setPopularCourses((prev) => prev.filter((item) => String(item.id) !== String(id)));
-            fetchPopularCoursesAdmin();
-            window.dispatchEvent(new Event('popular_courses_updated'));
-            setPopSuccessMsg('인기 강좌가 삭제되었습니다.');
-            setTimeout(() => setPopSuccessMsg(''), 4000);
-          } else {
-            setPopSuccessMsg(data.error || '삭제 중 오류가 발생했습니다.');
-            setTimeout(() => setPopSuccessMsg(''), 4000);
-          }
+          await deletePopularCourseFromFirestore(id);
+          window.dispatchEvent(new Event('popular_courses_updated'));
+          setPopSuccessMsg('인기 강좌가 Firestore DB에서 삭제되었습니다.');
+          setTimeout(() => setPopSuccessMsg(''), 4000);
         } catch (err) {
           console.error('Failed to delete course item:', err);
+          alert('삭제 중 오류가 발생했습니다.');
         }
       }
     );
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      setIsAuthenticated(false);
-      setPinInput('');
-      setPinError(false);
-      setSelectedIds([]);
-      setActiveTab('inquiries');
-      fetchInquiries();
-      fetchNoticeConfig();
-      fetchBoardNotices();
-      fetchPopularCoursesAdmin();
-    }
-  }, [isOpen]);
-
-  const handlePasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pinInput.trim() === '4001') {
-      setIsAuthenticated(true);
-      setPinError(false);
-    } else {
-      setPinError(true);
-    }
   };
 
   const handleSaveNotice = async (e?: React.FormEvent) => {
@@ -476,28 +443,18 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     setSavingNotice(true);
     setNoticeSuccessMsg('');
     try {
-      const res = await fetch('/api/popup-notice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(noticeConfig),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setNoticeSuccessMsg('개강 공지 팝업 설정 및 과정이 실시간으로 홈페이지 팝업에 반영되었습니다!');
-        window.dispatchEvent(new Event('notice_popup_updated'));
-        if (onNoticeUpdated) onNoticeUpdated();
-        setTimeout(() => setNoticeSuccessMsg(''), 4000);
-      } else {
-        alert(data.error || '공지 저장 실패');
-      }
+      await saveOpeningPopupToFirestore(noticeConfig);
+      setNoticeSuccessMsg('개강 공지 팝업 설정 및 과정이 Firestore DB 및 홈페이지 팝업에 실시간 반영되었습니다!');
+      window.dispatchEvent(new Event('notice_popup_updated'));
+      if (onNoticeUpdated) onNoticeUpdated();
+      setTimeout(() => setNoticeSuccessMsg(''), 4000);
     } catch (err) {
+      console.error('Opening popup save failed:', err);
       alert('공지 설정 저장 중 오류가 발생했습니다.');
     } finally {
       setSavingNotice(false);
     }
   };
-
-  if (!isOpen) return null;
 
   // Selection handlers
   const handleToggleSelect = (id: string) => {
@@ -525,19 +482,12 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       `선택한 ${selectedIds.length}건의 수강 신청 내역을 정말 삭제하시겠습니까?`,
       async () => {
         try {
-          const res = await fetch('/api/inquiries/batch-delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: selectedIds }),
-          });
-          const data = await res.json();
-          if (data.success) {
-            setInquiries((prev) => prev.filter((item) => !selectedIds.includes(item.id)));
-            setSelectedIds([]);
-            window.dispatchEvent(new Event('inquiry_updated'));
-          }
+          await batchDeleteApplicationsFromFirestore(selectedIds);
+          setSelectedIds([]);
+          window.dispatchEvent(new Event('inquiry_updated'));
         } catch (err) {
           console.error('Failed to delete selected inquiries:', err);
+          alert('선택 내역 삭제 중 오류가 발생했습니다.');
         }
       }
     );
@@ -551,19 +501,12 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       '🚨 전체 수강 신청 내역을 삭제하시겠습니까?\n이 작업은 복구할 수 없습니다.',
       async () => {
         try {
-          const res = await fetch('/api/inquiries/batch-delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clearAll: true }),
-          });
-          const data = await res.json();
-          if (data.success) {
-            setInquiries([]);
-            setSelectedIds([]);
-            window.dispatchEvent(new Event('inquiry_updated'));
-          }
+          await batchDeleteApplicationsFromFirestore(inquiries.map((i) => i.id));
+          setSelectedIds([]);
+          window.dispatchEvent(new Event('inquiry_updated'));
         } catch (err) {
           console.error('Failed to clear all inquiries:', err);
+          alert('전체 내역 삭제 중 오류가 발생했습니다.');
         }
       }
     );
@@ -572,19 +515,10 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   // Status Change Handler
   const handleStatusChange = async (id: string, newStatus: InquiryRecord['status']) => {
     try {
-      const res = await fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setInquiries((prev) =>
-          prev.map((item) => (String(item.id) === String(id) ? { ...item, status: newStatus } : item))
-        );
-        window.dispatchEvent(new Event('inquiry_updated'));
-      }
+      await updateApplicationStatusInFirestore(id, newStatus);
+      window.dispatchEvent(new Event('inquiry_updated'));
     } catch (err) {
+      console.error('Status change error:', err);
       alert('상태 변경에 실패했습니다.');
     }
   };
@@ -592,19 +526,10 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   // Save Admin Notes Handler
   const handleSaveMemo = async (id: string) => {
     try {
-      const res = await fetch(`/api/inquiries/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminNotes: editingMemo }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setInquiries((prev) =>
-          prev.map((item) => (String(item.id) === String(id) ? { ...item, adminNotes: editingMemo } : item))
-        );
-        setEditingId(null);
-      }
+      await updateApplicationStatusInFirestore(id, undefined, editingMemo);
+      setEditingId(null);
     } catch (err) {
+      console.error('Memo save error:', err);
       alert('메모 저장에 실패했습니다.');
     }
   };
@@ -616,14 +541,11 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       `${name}님의 수강 신청 내역을 정말 삭제하시겠습니까?`,
       async () => {
         try {
-          const res = await fetch(`/api/inquiries/${encodeURIComponent(id)}`, { method: 'DELETE' });
-          const data = await res.json();
-          if (data.success) {
-            setInquiries((prev) => prev.filter((item) => String(item.id) !== String(id)));
-            window.dispatchEvent(new Event('inquiry_updated'));
-          }
+          await deleteApplicationFromFirestore(id);
+          window.dispatchEvent(new Event('inquiry_updated'));
         } catch (err) {
           console.error('Failed to delete inquiry:', err);
+          alert('삭제 중 오류가 발생했습니다.');
         }
       }
     );
@@ -1286,8 +1208,15 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const completedCount = inquiries.filter((i) => i.status === '상담완료').length;
   const registeredCount = inquiries.filter((i) => i.status === '등록완료').length;
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-fadeIn overflow-y-auto">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-fadeIn overflow-y-auto"
+    >
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden my-auto">
         
         {/* Header */}
@@ -1310,6 +1239,20 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {isAuthenticated && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAuthenticated(false);
+                  setPinInput('');
+                }}
+                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 border border-white/10 mr-1"
+                title="관리자 인증 잠금"
+              >
+                <Lock className="w-3.5 h-3.5 text-blue-300" />
+                <span>로그아웃</span>
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
@@ -1448,12 +1391,21 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 )}
               </div>
 
-              <button
-                type="submit"
-                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-200 hover:shadow-blue-300 transition-all cursor-pointer"
-              >
-                관리자 인증 확인
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-1/2 py-3 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-sm rounded-2xl transition-all cursor-pointer"
+                >
+                  닫기
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-200 hover:shadow-blue-300 transition-all cursor-pointer"
+                >
+                  관리자 확인
+                </button>
+              </div>
             </form>
 
             <p className="text-[11px] text-slate-400 mt-6 font-medium">
@@ -1933,7 +1885,9 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 <span>등록된 공지 목록 ({boardNotices.length}개)</span>
                 <button
                   type="button"
-                  onClick={fetchBoardNotices}
+                  onClick={() => {
+                    window.dispatchEvent(new Event('board_notices_updated'));
+                  }}
                   className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -2162,7 +2116,9 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 <span>현재 노출 중인 인기 강좌 목록 ({popularCourses.length}개)</span>
                 <button
                   type="button"
-                  onClick={fetchPopularCoursesAdmin}
+                  onClick={() => {
+                    window.dispatchEvent(new Event('popular_courses_updated'));
+                  }}
                   className="inline-flex items-center gap-1 text-purple-600 hover:text-purple-800 cursor-pointer font-bold"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -2340,7 +2296,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               <select
                 value={selectedStatusFilter}
                 onChange={(e) => setSelectedStatusFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none"
+                className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
               >
                 <option value="전체">전체 보기 ({inquiries.length})</option>
                 <option value="상담대기">상담대기 ({pendingCount})</option>
@@ -2350,10 +2306,13 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               </select>
 
               <button
-                onClick={fetchInquiries}
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new Event('inquiry_updated'));
+                }}
                 disabled={loading}
                 className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                title="새로고침"
+                title="실시간 동기화 상태"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
@@ -2421,7 +2380,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
                         {/* ID & Date */}
                         <td className="p-3.5 whitespace-nowrap">
-                          <span className="font-bold text-slate-800 block">{item.id}</span>
+                          <span className="font-bold text-slate-800 block">{formatReceiptNumber(item, item.createdAt, inquiries)}</span>
                           <span className="text-[11px] text-slate-400 block mt-0.5">
                             {new Date(item.createdAt).toLocaleString('ko-KR', {
                               month: 'numeric',

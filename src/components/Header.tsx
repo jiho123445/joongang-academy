@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Phone, MapPin, Menu, X, GraduationCap, ChevronRight, Award, Bot, FileText, Calendar, FileSpreadsheet, ShieldCheck } from 'lucide-react';
+import { Phone, MapPin, Menu, X, ChevronRight, Award, Bot, FileText, Calendar, FileSpreadsheet, ShieldCheck } from 'lucide-react';
 import { ACADEMY_INFO } from '../data/coursesData';
+import { AcademyLogoSeal } from './AcademyLogoSeal';
 
 interface HeaderProps {
   activeSection: string;
@@ -44,8 +45,8 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
   return (
     <header className="sticky top-0 z-40 w-full bg-white/50 backdrop-blur-md border-b border-white/50 shadow-sm transition-all duration-200">
       {/* Top Banner Contact Strip (Desktop & Mobile) */}
-      <div className="bg-slate-900/90 backdrop-blur-md text-slate-200 text-xs py-1.5 px-4 border-b border-white/10">
-        <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-2">
+      <div className="bg-slate-900/90 backdrop-blur-md text-slate-200 text-xs py-1.5 border-b border-white/10">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center gap-2">
           <div className="flex items-center gap-4 text-slate-300">
             <span className="inline-flex items-center gap-1 font-medium text-emerald-400">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -84,34 +85,20 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
             className="flex items-center gap-2.5 sm:gap-3 cursor-pointer group shrink-0"
             id="header-logo"
           >
-            <img
-              src="/top_logo.png"
-              alt="홍천 중앙정보처리학원 로고"
-              className="h-11 sm:h-13 w-auto object-contain max-w-[280px] sm:max-w-[380px]"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                const fallbackEl = document.getElementById('header-logo-fallback');
-                if (fallbackEl) fallbackEl.style.display = 'flex';
-              }}
-            />
-            <div id="header-logo-fallback" className="hidden items-center gap-2.5 sm:gap-3 shrink-0">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-200 group-hover:bg-blue-700 transition-colors shrink-0">
-                <GraduationCap className="w-5 h-5 text-white" />
+            <AcademyLogoSeal className="w-11 h-11 sm:w-12 sm:h-12" />
+            <div className="shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-base sm:text-lg lg:text-xl text-slate-900 tracking-tight leading-none group-hover:text-blue-600 transition-colors whitespace-nowrap">
+                  홍천 중앙정보처리학원
+                </span>
+                <span className="bg-blue-100/80 backdrop-blur-sm text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200 whitespace-nowrap hidden md:inline-block">
+                  SINCE 1999
+                </span>
               </div>
-              <div className="shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-base sm:text-lg lg:text-xl text-slate-800 tracking-tight leading-none group-hover:text-blue-600 transition-colors whitespace-nowrap">
-                    홍천 중앙정보처리학원
-                  </span>
-                </div>
-                <p className="hidden xl:block text-[11px] text-slate-500 mt-0.5 font-medium whitespace-nowrap">
-                  고용노동부 국비지원 지정 IT·컴퓨터 교육기관
-                </p>
-              </div>
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium whitespace-nowrap">
+                고용노동부 국비지원 지정 IT·컴퓨터 교육기관
+              </p>
             </div>
-            <span className="bg-blue-100/80 backdrop-blur-sm text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200 whitespace-nowrap hidden md:inline-block">
-              SINCE 1999
-            </span>
           </div>
 
           {/* Desktop Navigation Links - Single Line Strict */}
@@ -123,7 +110,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
                   id={`nav-${item.id}`}
-                  className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                     isActive
                       ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-200'
                       : 'text-slate-700 hover:text-blue-600 hover:bg-white/70'
@@ -221,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left text-sm font-bold transition-colors ${
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-left text-sm font-bold transition-colors cursor-pointer ${
                   activeSection === item.id
                     ? 'bg-blue-600 text-white shadow-md'
                     : 'text-slate-800 hover:bg-white/60'
@@ -236,13 +223,13 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
           <div className="pt-2 grid grid-cols-2 gap-2">
             <button
               onClick={() => handleNavClick('inquiry')}
-              className="w-full py-3 bg-blue-600 text-white font-bold text-sm rounded-xl text-center shadow-lg shadow-blue-200"
+              className="w-full py-3 bg-blue-600 text-white font-bold text-sm rounded-xl text-center shadow-lg shadow-blue-200 cursor-pointer"
             >
               온라인 수강신청
             </button>
             <button
               onClick={onOpenAiModal}
-              className="w-full py-3 bg-slate-900 text-white font-bold text-sm rounded-xl text-center flex items-center justify-center gap-1.5 shadow"
+              className="w-full py-3 bg-slate-900 text-white font-bold text-sm rounded-xl text-center flex items-center justify-center gap-1.5 shadow cursor-pointer"
             >
               <Bot className="w-4 h-4 text-blue-400" />
               AI 수강 도우미
