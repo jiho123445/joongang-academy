@@ -3,6 +3,7 @@ import { InquiryRecord, Notice } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
+import { loginAdmin, logoutAdmin, onAdminAuthStateChanged } from '../lib/adminAuth';
 import {
   subscribeApplicationsFromFirestore,
   updateApplicationStatusInFirestore,
@@ -82,10 +83,13 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('전체');
   
-  // Simple admin auth check
+  // Firebase Authentication 기반 관리자 로그인 상태
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [pinInput, setPinInput] = useState<string>('');
-  const [pinError, setPinError] = useState<boolean>(false);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [loginEmail, setLoginEmail] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [loginError, setLoginError] = useState<string>('');
+  const [loginLoading, setLoginLoading] = useState<boolean>(false);
 
   // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'
   const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'>('inquiries');
@@ -172,13 +176,23 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     });
   };
 
+  // --- Firebase Auth 상태 감지 (로그인 여부는 앱 전역에서 계속 추적) ---
+  useEffect(() => {
+    const unsubAuth = onAdminAuthStateChanged((user) => {
+      setIsAuthenticated(!!user);
+      setAuthChecking(false);
+    });
+    return () => unsubAuth();
+  }, []);
+
   // --- Firestore Handlers & Real-time Subscriptions ---
 
   useEffect(() => {
     if (!isOpen) return;
 
-    setPinInput('');
-    setPinError(false);
+    setLoginEmail('');
+    setLoginPassword('');
+    setLoginError('');
     setSelectedIds([]);
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -214,13 +228,26 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     };
   }, [isOpen, onClose]);
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pinInput.trim() === '4001') {
-      setIsAuthenticated(true);
-      setPinError(false);
-    } else {
-      setPinError(true);
+    setLoginError('');
+    setLoginLoading(true);
+    try {
+      await loginAdmin(loginEmail.trim(), loginPassword);
+      // onAdminAuthStateChanged 리스너가 isAuthenticated를 true로 갱신해 줍니다.
+      setLoginPassword('');
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : '로그인에 실패했습니다.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleAdminLogout = async () => {
+    try {
+      await logoutAdmin();
+    } catch (err) {
+      console.error('로그아웃 오류:', err);
     }
   };
 
@@ -1242,10 +1269,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
             {isAuthenticated && (
               <button
                 type="button"
-                onClick={() => {
-                  setIsAuthenticated(false);
-                  setPinInput('');
-                }}
+                onClick={handleAdminLogout}
                 className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 border border-white/10 mr-1"
                 title="관리자 인증 잠금"
               >
@@ -1350,43 +1374,62 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       })()}
 
         {/* Modal Body */}
-        {!isAuthenticated ? (
-          /* Password Authentication Lock Screen */
+        {authChecking ? (
+          <div className="p-12 bg-slate-50 flex-1 flex items-center justify-center text-slate-400 text-sm font-bold">
+            로그인 상태 확인 중...
+          </div>
+        ) : !isAuthenticated ? (
+          /* Firebase Authentication Login Screen */
           <div className="p-8 sm:p-12 bg-slate-50 flex-1 flex flex-col items-center justify-center text-center my-auto">
             <div className="w-16 h-16 rounded-3xl bg-blue-100 text-blue-600 flex items-center justify-center mb-4 shadow-inner">
               <Lock className="w-8 h-8 text-blue-600 animate-pulse" />
             </div>
             
             <h3 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mb-1">
-              관리자 비밀번호 확인
+              관리자 로그인
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 max-w-sm mb-6 font-medium">
               신청내역 조회 및 개강 공지 관리는 원장님/관리자 전용입니다.<br />
-              비밀번호를 입력해 주세요.
+              등록된 관리자 계정으로 로그인해 주세요.
             </p>
 
-            <form onSubmit={handlePasswordSubmit} className="w-full max-w-xs space-y-3">
-              <div>
+            <form onSubmit={handleLoginSubmit} className="w-full max-w-xs space-y-3">
+              <div className="space-y-2">
                 <input
-                  type="password"
-                  value={pinInput}
+                  type="email"
+                  value={loginEmail}
                   onChange={(e) => {
-                    setPinInput(e.target.value);
-                    if (pinError) setPinError(false);
+                    setLoginEmail(e.target.value);
+                    if (loginError) setLoginError('');
                   }}
-                  placeholder="비밀번호 입력 (4자리)"
-                  maxLength={10}
-                  className={`w-full px-4 py-3 text-center text-lg tracking-widest font-black rounded-2xl border bg-white shadow-sm focus:outline-none transition-all ${
-                    pinError
+                  placeholder="관리자 이메일"
+                  autoComplete="username"
+                  className={`w-full px-4 py-3 text-sm font-bold rounded-2xl border bg-white shadow-sm focus:outline-none transition-all ${
+                    loginError
                       ? 'border-red-500 ring-2 ring-red-200 text-red-600'
                       : 'border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900'
                   }`}
                   autoFocus
                 />
-                {pinError && (
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => {
+                    setLoginPassword(e.target.value);
+                    if (loginError) setLoginError('');
+                  }}
+                  placeholder="비밀번호"
+                  autoComplete="current-password"
+                  className={`w-full px-4 py-3 text-sm font-bold rounded-2xl border bg-white shadow-sm focus:outline-none transition-all ${
+                    loginError
+                      ? 'border-red-500 ring-2 ring-red-200 text-red-600'
+                      : 'border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900'
+                  }`}
+                />
+                {loginError && (
                   <p className="text-xs text-red-600 font-bold mt-2 flex items-center justify-center gap-1">
                     <AlertCircle className="w-3.5 h-3.5" />
-                    <span>비밀번호가 올바르지 않습니다. 다시 입력해주세요.</span>
+                    <span>{loginError}</span>
                   </p>
                 )}
               </div>
@@ -1401,15 +1444,16 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-200 hover:shadow-blue-300 transition-all cursor-pointer"
+                  disabled={loginLoading}
+                  className="w-1/2 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-black text-sm rounded-2xl shadow-lg shadow-blue-200 hover:shadow-blue-300 transition-all cursor-pointer"
                 >
-                  관리자 확인
+                  {loginLoading ? '로그인 중...' : '로그인'}
                 </button>
               </div>
             </form>
 
             <p className="text-[11px] text-slate-400 mt-6 font-medium">
-              * 비밀번호 분실 시 시스템 담당자에게 문의 바랍니다.
+              * 계정이 없다면 Firebase 콘솔(Authentication)에서 관리자 계정을 먼저 만들어 주세요.
             </p>
           </div>
         ) : activeTab === 'notice' ? (

@@ -8,26 +8,28 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // 1. 활동사진('activities') & 공지사항('notices')
+    // 1. 공지사항('notices') & 인기강좌('popular_courses')
     // 누구나 읽기 가능, 관리자만 쓰기(생성/수정/삭제) 가능
-    match /activities/{activityId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
     match /notices/{noticeId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 2. 문의하기('contacts') & 후원신청('donations')
-    // 누구나 작성(create) 가능, 관리자만 조회/수정/삭제 가능 (개인정보 보호)
-    match /contacts/{contactId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin();
+    match /popular_courses/{courseId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    match /donations/{donationId} {
+    // 2. 개강 팝업 등 사이트 설정('settings')
+    // 누구나 읽기 가능, 관리자만 쓰기 가능
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 3. 수강신청('applications') - 이름/전화번호 등 개인정보 포함
+    // 누구나 작성(create)만 가능, 조회/수정/삭제는 관리자만 (개인정보 보호 핵심 규칙)
+    match /applications/{applicationId} {
       allow create: if true;
       allow read, update, delete: if isAdmin();
     }
