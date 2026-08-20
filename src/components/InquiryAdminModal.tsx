@@ -3,7 +3,7 @@ import { InquiryRecord, Notice } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-import { loginAdmin, logoutAdmin, onAdminAuthStateChanged } from '../lib/adminAuth';
+import { loginAdmin, logoutAdmin, onAdminAuthStateChanged, changeAdminPassword, getCurrentAdminEmail } from '../lib/adminAuth';
 import {
   subscribeApplicationsFromFirestore,
   updateApplicationStatusInFirestore,
@@ -90,6 +90,15 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
+
+  // 비밀번호 변경 모달 상태
+  const [isChangePwOpen, setIsChangePwOpen] = useState<boolean>(false);
+  const [currentPwInput, setCurrentPwInput] = useState<string>('');
+  const [newPwInput, setNewPwInput] = useState<string>('');
+  const [newPwConfirmInput, setNewPwConfirmInput] = useState<string>('');
+  const [changePwError, setChangePwError] = useState<string>('');
+  const [changePwSuccess, setChangePwSuccess] = useState<string>('');
+  const [changePwLoading, setChangePwLoading] = useState<boolean>(false);
 
   // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'
   const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'>('inquiries');
@@ -248,6 +257,43 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       await logoutAdmin();
     } catch (err) {
       console.error('로그아웃 오류:', err);
+    }
+  };
+
+  const openChangePwModal = () => {
+    setCurrentPwInput('');
+    setNewPwInput('');
+    setNewPwConfirmInput('');
+    setChangePwError('');
+    setChangePwSuccess('');
+    setIsChangePwOpen(true);
+  };
+
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangePwError('');
+    setChangePwSuccess('');
+
+    if (newPwInput.length < 6) {
+      setChangePwError('새 비밀번호는 6자 이상이어야 합니다.');
+      return;
+    }
+    if (newPwInput !== newPwConfirmInput) {
+      setChangePwError('새 비밀번호가 서로 일치하지 않습니다.');
+      return;
+    }
+
+    setChangePwLoading(true);
+    try {
+      await changeAdminPassword(currentPwInput, newPwInput);
+      setChangePwSuccess('비밀번호가 성공적으로 변경되었습니다.');
+      setCurrentPwInput('');
+      setNewPwInput('');
+      setNewPwConfirmInput('');
+    } catch (err) {
+      setChangePwError(err instanceof Error ? err.message : '비밀번호 변경에 실패했습니다.');
+    } finally {
+      setChangePwLoading(false);
     }
   };
 
@@ -1267,15 +1313,29 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
           <div className="flex items-center gap-2">
             {isAuthenticated && (
-              <button
-                type="button"
-                onClick={handleAdminLogout}
-                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 border border-white/10 mr-1"
-                title="관리자 인증 잠금"
-              >
-                <Lock className="w-3.5 h-3.5 text-blue-300" />
-                <span>로그아웃</span>
-              </button>
+              <>
+                <span className="hidden sm:inline text-[11px] text-slate-400 font-bold mr-1" title="현재 로그인된 관리자">
+                  {getCurrentAdminEmail()}
+                </span>
+                <button
+                  type="button"
+                  onClick={openChangePwModal}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 border border-white/10"
+                  title="비밀번호 변경"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-blue-300" />
+                  <span>비밀번호 변경</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAdminLogout}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 border border-white/10 mr-1"
+                  title="관리자 인증 잠금"
+                >
+                  <Lock className="w-3.5 h-3.5 text-blue-300" />
+                  <span>로그아웃</span>
+                </button>
+              </>
             )}
             <button
               onClick={onClose}
@@ -2624,6 +2684,93 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                   {confirmDialog.confirmText || '삭제하기'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Change Password Modal */}
+        {isChangePwOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-6 space-y-4 border border-slate-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-blue-600">
+                  <div className="p-2.5 bg-blue-100 rounded-2xl">
+                    <Lock className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-bold text-base text-slate-900">비밀번호 변경</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsChangePwOpen(false)}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-500 leading-relaxed">
+                현재 로그인 중인 <span className="font-bold text-slate-700">{getCurrentAdminEmail()}</span> 계정의 비밀번호를 변경합니다.
+              </p>
+
+              <form onSubmit={handleChangePasswordSubmit} className="space-y-3">
+                <input
+                  type="password"
+                  value={currentPwInput}
+                  onChange={(e) => { setCurrentPwInput(e.target.value); setChangePwError(''); }}
+                  placeholder="현재 비밀번호"
+                  autoComplete="current-password"
+                  className="w-full px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900"
+                  required
+                />
+                <input
+                  type="password"
+                  value={newPwInput}
+                  onChange={(e) => { setNewPwInput(e.target.value); setChangePwError(''); }}
+                  placeholder="새 비밀번호 (6자 이상)"
+                  autoComplete="new-password"
+                  className="w-full px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900"
+                  required
+                />
+                <input
+                  type="password"
+                  value={newPwConfirmInput}
+                  onChange={(e) => { setNewPwConfirmInput(e.target.value); setChangePwError(''); }}
+                  placeholder="새 비밀번호 확인"
+                  autoComplete="new-password"
+                  className="w-full px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900"
+                  required
+                />
+
+                {changePwError && (
+                  <p className="text-xs text-red-600 font-bold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>{changePwError}</span>
+                  </p>
+                )}
+                {changePwSuccess && (
+                  <p className="text-xs text-emerald-600 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{changePwSuccess}</span>
+                  </p>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsChangePwOpen(false)}
+                    className="w-1/2 py-2.5 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-sm rounded-xl transition-all cursor-pointer"
+                  >
+                    닫기
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={changePwLoading}
+                    className="w-1/2 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-black text-sm rounded-xl shadow-md transition-all cursor-pointer"
+                  >
+                    {changePwLoading ? '변경 중...' : '변경하기'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
