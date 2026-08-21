@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, FileText, FileArchive, FileSpreadsheet as FileSpreadsheetIcon, FolderOpen } from 'lucide-react';
 import { MaterialItem } from '../types';
-import { MATERIAL_COURSE_CATEGORIES, MATERIAL_TYPES } from '../data/coursesData';
+import { MATERIAL_TYPES } from '../data/coursesData';
 import { subscribeMaterialsFromFirestore } from '../lib/firestoreService';
 
 function formatFileSize(bytes: number): string {
@@ -20,7 +20,6 @@ function getFileIcon(fileName: string) {
 export const MaterialsSection: React.FC = () => {
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedCourse, setSelectedCourse] = useState<string>('전체');
   const [selectedType, setSelectedType] = useState<string>('전체');
 
   useEffect(() => {
@@ -32,9 +31,7 @@ export const MaterialsSection: React.FC = () => {
   }, []);
 
   const filtered = materials.filter((m) => {
-    const matchesCourse = selectedCourse === '전체' || m.courseCategory === selectedCourse;
-    const matchesType = selectedType === '전체' || m.materialType === selectedType;
-    return matchesCourse && matchesType;
+    return selectedType === '전체' || m.materialType === selectedType;
   });
 
   return (
@@ -53,24 +50,6 @@ export const MaterialsSection: React.FC = () => {
           <p className="text-slate-600 text-sm sm:text-base mt-2">
             수강생을 위한 각종 서식, 과정별 예제 파일, 채점프로그램을 내려받으실 수 있습니다.
           </p>
-        </div>
-
-        {/* Course Filter */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-3">
-          <span className="text-xs font-bold text-slate-500 shrink-0">과정</span>
-          {['전체', ...MATERIAL_COURSE_CATEGORIES].map((c) => (
-            <button
-              key={c}
-              onClick={() => setSelectedCourse(c)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                selectedCourse === c
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                  : 'bg-white/60 backdrop-blur-md text-slate-700 border border-white/80 hover:bg-white'
-              }`}
-            >
-              {c}
-            </button>
-          ))}
         </div>
 
         {/* Type Filter */}
@@ -131,7 +110,7 @@ export const MaterialsSection: React.FC = () => {
                       <p className="text-xs text-slate-600 mt-0.5 line-clamp-1">{item.description}</p>
                     )}
                     <p className="text-[11px] text-slate-400 mt-1">
-                      {item.courseCategory} · {item.materialType} · {formatFileSize(item.fileSize)}
+                      {item.materialType} · {formatFileSize(item.fileSize)}
                     </p>
                   </div>
                   <div className="shrink-0 p-2.5 rounded-xl bg-slate-100 group-hover:bg-blue-600 text-slate-500 group-hover:text-white transition-all">

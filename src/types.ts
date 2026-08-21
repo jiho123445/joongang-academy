@@ -50,7 +50,7 @@ export interface FAQItem {
 }
 
 // 자료실 - 서식/예제/프로그램 등 다운로드 자료
-export type MaterialType = '학원서식' | '내일배움카드 서식' | '예제 파일' | '기타';
+export type MaterialType = '학원서식' | '예제 파일' | '내일배움카드 서식' | '기타';
 
 export interface MaterialItem {
   id: string;
