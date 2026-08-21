@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Course } from './types';
 import { Header } from './components/Header';
 import { HeroSection } from './components/HeroSection';
@@ -11,7 +11,6 @@ import { AcademyIntro } from './components/AcademyIntro';
 import { NoticeBoard } from './components/NoticeBoard';
 import { FaqSection } from './components/FaqSection';
 import { InquirySection } from './components/InquirySection';
-import { InquiryAdminModal } from './components/InquiryAdminModal';
 import { NoticePopupModal, PopupNoticeConfig } from './components/NoticePopupModal';
 import { LocationSection } from './components/LocationSection';
 import { Footer } from './components/Footer';
@@ -26,6 +25,14 @@ import {
 import { onAdminAuthStateChanged } from './lib/adminAuth';
 import { trackPageView } from './lib/analytics';
 
+// InquiryAdminModal은 엑셀 내보내기 라이브러리(exceljs)를 포함해 코드량이 커서
+// (수강생 등 일반 방문자는 절대 열지 않는 화면인데도) 즉시 로드하면 모든 방문자가
+// 이 무거운 코드를 다운로드하게 됩니다. React.lazy로 분리해, 원장님이 실제로
+// "관리자 모드" 버튼을 눌렀을 때만 해당 코드가 내려받아지도록 했습니다.
+const InquiryAdminModal = lazy(() =>
+  import('./components/InquiryAdminModal').then((mod) => ({ default: mod.InquiryAdminModal }))
+);
+
 export default function App() {
   const [activeSection, setActiveSection] = useState<string>('home');
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
@@ -33,6 +40,10 @@ export default function App() {
   const [preselectedCourseForInquiry, setPreselectedCourseForInquiry] = useState<string>('');
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  // 관리자 모달을 한 번이라도 열었는지 - lazy 컴포넌트를 처음 열 때만 마운트하고
+  // 이후로는 계속 마운트된 상태로 두어(isOpen=false로 숨기기만) 다시 열 때
+  // 매번 다시 로드/리렌더링되지 않게 합니다.
+  const [hasOpenedAdminModal, setHasOpenedAdminModal] = useState<boolean>(false);
 
   // Opening Notice Popup State
   const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig | null>(DEFAULT_OPENING_POPUP);
@@ -154,6 +165,11 @@ export default function App() {
     handleNavigate('inquiry');
   };
 
+  const handleOpenAdminModal = () => {
+    setHasOpenedAdminModal(true);
+    setIsAdminModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-transparent text-slate-900 font-sans antialiased selection:bg-blue-600 selection:text-white pb-16 lg:pb-0">
       
@@ -162,7 +178,7 @@ export default function App() {
         activeSection={activeSection}
         onNavigate={handleNavigate}
         onOpenAiModal={() => setIsAiModalOpen(true)}
-        onOpenAdminModal={() => setIsAdminModalOpen(true)}
+        onOpenAdminModal={handleOpenAdminModal}
         pendingInquiryCount={pendingInquiryCount}
       />
 
@@ -323,7 +339,7 @@ export default function App() {
             />
             <InquirySection
               preselectedCourse={preselectedCourseForInquiry}
-              onOpenAdminModal={() => setIsAdminModalOpen(true)}
+              onOpenAdminModal={handleOpenAdminModal}
               pendingInquiryCount={pendingInquiryCount}
             />
           </div>
@@ -377,13 +393,20 @@ export default function App() {
       />
 
       {/* Admin Inquiry Data Management & Notice Modal */}
-      <InquiryAdminModal
-        isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
-        onNoticeUpdated={() => {
-          setIsNoticePopupOpen(true);
-        }}
-      />
+      {/* hasOpenedAdminModal이 true가 되기 전까지는 이 코드 자체를 마운트하지 않아
+          lazy chunk를 내려받지 않습니다. 한 번 열린 뒤에는 계속 마운트해 두고
+          isOpen prop으로만 표시/숨김을 제어합니다(재오픈 시 재로딩 방지). */}
+      {hasOpenedAdminModal && (
+        <Suspense fallback={null}>
+          <InquiryAdminModal
+            isOpen={isAdminModalOpen}
+            onClose={() => setIsAdminModalOpen(false)}
+            onNoticeUpdated={() => {
+              setIsNoticePopupOpen(true);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Floating Notice Popup Button */}
       {!isNoticePopupOpen && noticeConfig && noticeConfig.enabled && (

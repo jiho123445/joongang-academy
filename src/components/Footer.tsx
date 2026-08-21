@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ACADEMY_INFO } from '../data/coursesData';
 import { Phone, MapPin, Mail, Printer, ExternalLink } from 'lucide-react';
 import { AcademyLogoSeal } from './AcademyLogoSeal';
+import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 interface FooterProps {
   onNavigate: (sectionId: string) => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
   return (
     <footer className="bg-slate-900/80 backdrop-blur-2xl text-slate-400 text-xs sm:text-sm pt-12 pb-24 lg:pb-12 border-t border-white/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -101,10 +103,20 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
         {/* Bottom Copyright */}
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
           <p>© 1999-{new Date().getFullYear()} 홍천 중앙정보처리학원 (jahrd.com). All Rights Reserved.</p>
-          <p>개인정보 처리방침 | 이용약관 | 고용노동부 지정 훈련기관</p>
+          <p>
+            <button
+              onClick={() => setIsPrivacyOpen(true)}
+              className="hover:text-blue-300 underline underline-offset-2 transition-colors cursor-pointer"
+            >
+              개인정보 처리방침
+            </button>
+            {' '}| 고용노동부 지정 훈련기관
+          </p>
         </div>
 
       </div>
+
+      <PrivacyPolicyModal isOpen={isPrivacyOpen} onClose={() => setIsPrivacyOpen(false)} />
     </footer>
   );
 };

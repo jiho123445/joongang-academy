@@ -3,6 +3,7 @@ import { ConsultationForm } from '../types';
 import { COURSES_DATA, ACADEMY_INFO } from '../data/coursesData';
 import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, Sparkles, FileSpreadsheet, RotateCcw } from 'lucide-react';
 import { submitApplicationToFirestore, formatReceiptNumber } from '../lib/firestoreService';
+import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 interface InquirySectionProps {
   preselectedCourse?: string;
@@ -25,6 +26,10 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 개인정보 수집·이용 동의
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+
   // Spam protection: honeypot field (bots tend to fill every input; humans never see or fill this)
   const [honeypot, setHoneypot] = useState('');
   // Spam protection: form-render timestamp. Bots that submit within ~2 seconds of page load are blocked.
@@ -40,6 +45,7 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
     setFormData(getInitialForm());
     setStatusMessage(null);
     setHoneypot('');
+    setPrivacyConsent(false);
     formOpenedAtRef.current = Date.now();
   };
 
@@ -48,6 +54,11 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
 
     if (!formData.name.trim() || !formData.phone.trim()) {
       setStatusMessage({ type: 'error', text: '성함과 연락처(전화번호)를 정확히 입력해 주세요.' });
+      return;
+    }
+
+    if (!privacyConsent) {
+      setStatusMessage({ type: 'error', text: '개인정보 수집·이용에 동의해 주셔야 신청이 가능합니다.' });
       return;
     }
 
@@ -94,6 +105,7 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
       // Reset form input values completely for the next inquiry
       setFormData(getInitialForm());
       setHoneypot('');
+      setPrivacyConsent(false);
       formOpenedAtRef.current = Date.now();
 
       setStatusMessage({
@@ -362,6 +374,30 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
                 />
               </div>
 
+              {/* Privacy Consent Checkbox */}
+              <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/80">
+                <input
+                  type="checkbox"
+                  id="privacy-consent"
+                  checked={privacyConsent}
+                  onChange={(e) => setPrivacyConsent(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer shrink-0"
+                />
+                <label htmlFor="privacy-consent" className="text-xs text-slate-600 leading-relaxed cursor-pointer">
+                  (필수) 수강 상담을 위한 개인정보(성함, 연락처) 수집·이용에 동의합니다.{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsPrivacyModalOpen(true);
+                    }}
+                    className="text-blue-600 font-bold underline underline-offset-2 hover:text-blue-700"
+                  >
+                    자세히 보기
+                  </button>
+                </label>
+              </div>
+
               {statusMessage && (
                 <div
                   className={`p-4 rounded-2xl text-xs sm:text-sm font-semibold flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
@@ -405,6 +441,8 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
         </div>
 
       </div>
+
+      <PrivacyPolicyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />
     </section>
   );
 };

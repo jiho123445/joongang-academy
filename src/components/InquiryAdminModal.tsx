@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { InquiryRecord, Notice } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
-import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { loginAdmin, logoutAdmin, onAdminAuthStateChanged, changeAdminPassword, getCurrentAdminEmail } from '../lib/adminAuth';
 import {
