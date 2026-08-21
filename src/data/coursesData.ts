@@ -270,3 +270,12 @@ export const ACADEMY_INFO = {
     { title: '취업 및 사후관리', desc: '이력서/자기소개서 교정 및 홍천지역 협력업체 취업 연계' }
   ]
 };
+
+// 자료실 - 과정별 분류 목록 ('공통'은 특정 과정에 한정되지 않는 일반 서식용)
+export const MATERIAL_COURSE_CATEGORIES: string[] = [
+  '공통',
+  ...COURSES_DATA.map((c) => c.title),
+];
+
+// 자료실 - 자료 유형 목록
+export const MATERIAL_TYPES = ['서식', '예제', '프로그램', '기타'] as const;

@@ -16,8 +16,8 @@ import {
   Timestamp,
   FirestoreError,
 } from "firebase/firestore";
-import { db, auth } from "./firebase";
-import { InquiryRecord, Notice } from "../types";
+import { db, auth, storage } from "./firebase";
+import { InquiryRecord, Notice, MaterialItem } from "../types";
 import { ScheduleItem, PopupNoticeConfig } from "../components/NoticePopupModal";
 import { PopularCourseAdminItem } from "../components/InquiryAdminModal";
 
@@ -715,3 +715,129 @@ export async function deletePopularCourseFromFirestore(id: string): Promise<void
     handleFirestoreError(err, "deletePopularCourseFromFirestore");
   }
 }
+
+// =========================================================================
+// MATERIALS COLLECTION (`materials`) - 자료실 (서식/예제/프로그램 다운로드)
+// =========================================================================
+
+export function subscribeMaterialsFromFirestore(
+  onUpdate: (materials: MaterialItem[]) => void
+): () => void {
+  const colRef = collection(db, "materials");
+  const q = query(colRef, orderBy("createdAt", "desc"));
+
+  const parseSnapshot = (snapshot: any): MaterialItem[] =>
+    snapshot.docs.map((d: any) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        title: data.title || "",
+        description: data.description || "",
+        courseCategory: data.courseCategory || "공통",
+        materialType: data.materialType || "기타",
+        fileName: data.fileName || "",
+        fileURL: data.fileURL || "",
+        storagePath: data.storagePath || "",
+        fileSize: typeof data.fileSize === "number" ? data.fileSize : 0,
+        createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
+      } as MaterialItem;
+    });
+
+  return onSnapshot(
+    q,
+    (snapshot) => onUpdate(parseSnapshot(snapshot)),
+    (err: FirestoreError) => {
+      if (err.code === "failed-precondition") {
+        console.warn("자료실 정렬 인덱스가 아직 준비되지 않아 무정렬로 재조회합니다:", err);
+        onSnapshot(colRef, (snapshot) => onUpdate(parseSnapshot(snapshot)));
+      } else {
+        console.error("자료실 구독 실패:", err);
+      }
+    }
+  );
+}
+
+/**
+ * 파일을 Firebase Storage에 업로드하고, 완료되면 Firestore에 메타데이터
+ * 문서를 생성합니다. onProgress로 0~100 사이의 업로드 진행률을 전달받을 수
+ * 있습니다. (관리자 전용 - Storage/Firestore 규칙상 로그인 없이는 실패합니다.)
+ */
+export async function uploadMaterialToFirestore(
+  file: File,
+  meta: {
+    title: string;
+    description?: string;
+    courseCategory: string;
+    materialType: MaterialItem["materialType"];
+  },
+  onProgress?: (percent: number) => void
+): Promise<MaterialItem> {
+  const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
+
+  const safeFileName = file.name.replace(/[^\w.\-가-힣 ]/g, "_");
+  const storagePath = `materials/${meta.courseCategory}/${Date.now()}_${safeFileName}`;
+  const storageRef = ref(storage, storagePath);
+
+  const uploadTask = uploadBytesResumable(storageRef, file);
+
+  await new Promise<void>((resolve, reject) => {
+    uploadTask.on(
+      "state_changed",
+      (snapshot) => {
+        if (onProgress) {
+          const percent = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          onProgress(percent);
+        }
+      },
+      (error) => reject(error),
+      () => resolve()
+    );
+  });
+
+  const fileURL = await getDownloadURL(storageRef);
+  const now = new Date();
+
+  const docData = {
+    title: meta.title.trim(),
+    description: meta.description ? meta.description.trim() : "",
+    courseCategory: meta.courseCategory,
+    materialType: meta.materialType,
+    fileName: file.name,
+    fileURL,
+    storagePath,
+    fileSize: file.size,
+    createdAt: serverTimestamp(),
+    createdAtIso: now.toISOString(),
+  };
+
+  const docRef = await addDoc(collection(db, "materials"), docData);
+
+  return {
+    id: docRef.id,
+    title: docData.title,
+    description: docData.description,
+    courseCategory: docData.courseCategory,
+    materialType: docData.materialType,
+    fileName: docData.fileName,
+    fileURL: docData.fileURL,
+    storagePath: docData.storagePath,
+    fileSize: docData.fileSize,
+    createdAt: docData.createdAtIso,
+  };
+}
+
+export async function deleteMaterialFromFirestore(id: string, storagePath: string): Promise<void> {
+  try {
+    // Storage 파일 삭제 (이미 지워졌거나 존재하지 않으면 무시)
+    try {
+      const { ref, deleteObject } = await import("firebase/storage");
+      await deleteObject(ref(storage, storagePath));
+    } catch (storageErr) {
+      console.warn("Storage 파일 삭제 실패 (이미 삭제되었을 수 있음):", storageErr);
+    }
+    await deleteDoc(doc(db, "materials", id));
+  } catch (err) {
+    handleFirestoreError(err, "deleteMaterialFromFirestore");
+  }
+}
+

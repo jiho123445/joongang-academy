@@ -36,5 +36,17 @@ service firebase.storage {
             || request.resource.contentType == 'application/pdf');
     }
 
+    // 3. 자료실 파일 Storage 경로 ('materials/') - 서식/예제/채점프로그램 등
+    // 누구나 다운로드(read) 가능, 업로드/삭제는 관리자만 가능합니다.
+    // hwp/문서 파일이나 exe를 담은 zip 등은 브라우저마다 보고하는
+    // contentType이 제각각이라(예: hwp가 application/octet-stream으로 오는 경우가
+    // 흔함) 별도 형식 제한 없이 업로드 권한(관리자 전용)만으로 통제하고,
+    // 대신 용량 상한을 100MB로 넉넉히 잡아 설치파일 등도 감당할 수 있게 했습니다.
+    match /materials/{allPaths=**} {
+      allow read: if true;
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin() && request.resource.size < 100 * 1024 * 1024;
+    }
+
   }
 }

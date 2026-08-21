@@ -13,6 +13,7 @@ import { FaqSection } from './components/FaqSection';
 import { InquirySection } from './components/InquirySection';
 import { NoticePopupModal, PopupNoticeConfig } from './components/NoticePopupModal';
 import { LocationSection } from './components/LocationSection';
+import { MaterialsSection } from './components/MaterialsSection';
 import { Footer } from './components/Footer';
 import { AiConsultantModal } from './components/AiConsultantModal';
 import { MobileQuickBar } from './components/MobileQuickBar';
@@ -134,7 +135,7 @@ export default function App() {
       const raw = window.location.hash.replace('#', '').trim();
       if (
         raw &&
-        ['courses', 'national-support', 'intro', 'notices', 'inquiry', 'location', 'home'].includes(raw)
+        ['courses', 'national-support', 'intro', 'notices', 'inquiry', 'location', 'materials', 'home'].includes(raw)
       ) {
         setActiveSection(raw);
       } else if (raw === 'hero') {
@@ -355,6 +356,19 @@ export default function App() {
               onNavigateHome={() => handleNavigate('home')}
             />
             <LocationSection />
+          </div>
+        )}
+
+        {/* 9. MATERIALS (자료실) PAGE */}
+        {activeSection === 'materials' && (
+          <div className="animate-fadeIn">
+            <PageHeader
+              title="자료실"
+              subtitle="서식, 과정별 예제 파일, 채점프로그램을 다운로드하실 수 있습니다"
+              categoryName="자료실"
+              onNavigateHome={() => handleNavigate('home')}
+            />
+            <MaterialsSection />
           </div>
         )}
 

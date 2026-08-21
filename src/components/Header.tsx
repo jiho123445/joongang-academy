@@ -30,9 +30,10 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
   const navItems = [
     { id: 'home', label: '홈' },
     { id: 'courses', label: '교육과정' },
-    { id: 'national-support', label: '국비지원(내일배움)' },
+    { id: 'national-support', label: '국비지원' },
     { id: 'intro', label: '학원소개' },
     { id: 'notices', label: '공지·시험일정' },
+    { id: 'materials', label: '자료실' },
     { id: 'inquiry', label: '온라인 수강문의' },
     { id: 'location', label: '오시는길' },
   ];

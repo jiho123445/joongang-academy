@@ -48,3 +48,19 @@ export interface FAQItem {
   answer: string;
   category: string;
 }
+
+// 자료실 - 서식/예제/프로그램 등 다운로드 자료
+export type MaterialType = '서식' | '예제' | '프로그램' | '기타';
+
+export interface MaterialItem {
+  id: string;
+  title: string;
+  description?: string;
+  courseCategory: string; // 과정명 (예: '컴퓨터활용능력 2급/1급 취득반') 또는 '공통'
+  materialType: MaterialType;
+  fileName: string;
+  fileURL: string;
+  storagePath: string; // Storage 경로 (삭제 시 필요)
+  fileSize: number; // bytes
+  createdAt: string; // ISO date string
+}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { InquiryRecord, Notice } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
+import { MaterialsAdminPanel } from './MaterialsAdminPanel';
 import ExcelJS from 'exceljs';
 import { loginAdmin, logoutAdmin, onAdminAuthStateChanged, changeAdminPassword, getCurrentAdminEmail } from '../lib/adminAuth';
 import {
@@ -100,7 +101,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [changePwLoading, setChangePwLoading] = useState<boolean>(false);
 
   // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'
-  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'>('inquiries');
+  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'materials'>('inquiries');
 
   // Board Notices (공지사항 & 자격시험 일정) State
   const [boardNotices, setBoardNotices] = useState<Notice[]>([]);
@@ -1429,21 +1430,36 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 <Flame className="w-4 h-4 text-amber-400" />
                 <span>실시간 인기강좌 관리 ({popularCourses.length}건)</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('materials')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  activeTab === 'materials'
+                    ? 'bg-teal-600 text-white shadow-md'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>자료실 관리</span>
+              </button>
             </div>
 
-            <button
-              onClick={handleExportToExcel}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
-              title="엑셀파일로 다운로드"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>
-                {activeTab === 'inquiries' && '수강신청 엑셀 다운로드'}
-                {activeTab === 'notice' && '팝업공지 엑셀 다운로드'}
-                {activeTab === 'boardNotices' && '공지사항 엑셀 다운로드'}
-                {activeTab === 'popularCourses' && '인기강좌 엑셀 다운로드'}
-              </span>
-            </button>
+            {activeTab !== 'materials' && (
+              <button
+                onClick={handleExportToExcel}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
+                title="엑셀파일로 다운로드"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>
+                  {activeTab === 'inquiries' && '수강신청 엑셀 다운로드'}
+                  {activeTab === 'notice' && '팝업공지 엑셀 다운로드'}
+                  {activeTab === 'boardNotices' && '공지사항 엑셀 다운로드'}
+                  {activeTab === 'popularCourses' && '인기강좌 엑셀 다운로드'}
+                </span>
+              </button>
+            )}
           </div>
         );
       })()}
@@ -2322,6 +2338,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               )}
             </div>
           </div>
+        ) : activeTab === 'materials' ? (
+          <MaterialsAdminPanel />
         ) : (
           /* Admin Inquiry List Content */
           <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
@@ -2659,7 +2677,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
             <span>상담 신청 데이터는 서버에 안전하게 관리·보관됩니다.</span>
           </p>
           <div className="flex items-center gap-3">
-            {isAuthenticated && (
+            {isAuthenticated && activeTab !== 'materials' && (
               <button
                 onClick={handleExportToExcel}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"
