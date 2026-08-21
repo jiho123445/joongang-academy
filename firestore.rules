@@ -29,8 +29,16 @@ service cloud.firestore {
 
     // 3. 수강신청('applications') - 이름/전화번호 등 개인정보 포함
     // 누구나 작성(create)만 가능, 조회/수정/삭제는 관리자만 (개인정보 보호 핵심 규칙)
+    // create 시 최소한의 형식/길이 검증을 추가해 비정상적으로 크거나 형식이
+    // 어긋난 스팸성 데이터가 저장되는 것을 서버(Firestore) 단에서도 막습니다.
     match /applications/{applicationId} {
-      allow create: if true;
+      allow create: if request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 50
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 9
+        && request.resource.data.phone.size() <= 20
+        && (!('message' in request.resource.data) || request.resource.data.message.size() <= 1000);
       allow read, update, delete: if isAdmin();
     }
 

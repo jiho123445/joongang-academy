@@ -23,6 +23,7 @@ import {
   subscribeOpeningPopupFromFirestore,
   DEFAULT_OPENING_POPUP,
 } from './lib/firestoreService';
+import { trackPageView } from './lib/analytics';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<string>('home');
@@ -122,6 +123,7 @@ export default function App() {
     setActiveSection(targetPage);
     window.location.hash = targetPage;
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    trackPageView(targetPage);
 
     // Open opening notice popup modal when Home button/logo is clicked
     if (pageId === 'home' || pageId === 'hero') {
