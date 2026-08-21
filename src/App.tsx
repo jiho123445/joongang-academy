@@ -14,6 +14,7 @@ import { InquirySection } from './components/InquirySection';
 import { NoticePopupModal, PopupNoticeConfig } from './components/NoticePopupModal';
 import { LocationSection } from './components/LocationSection';
 import { MaterialsSection } from './components/MaterialsSection';
+import { StudentAuthGate } from './components/StudentAuthGate';
 import { Footer } from './components/Footer';
 import { AiConsultantModal } from './components/AiConsultantModal';
 import { MobileQuickBar } from './components/MobileQuickBar';
@@ -24,6 +25,8 @@ import {
   DEFAULT_OPENING_POPUP,
 } from './lib/firestoreService';
 import { onAdminAuthStateChanged } from './lib/adminAuth';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
 import { trackPageView } from './lib/analytics';
 
 // InquiryAdminModal은 엑셀 내보내기 라이브러리(exceljs)를 포함해 코드량이 커서
@@ -54,11 +57,22 @@ export default function App() {
   const [pendingInquiryCount, setPendingInquiryCount] = useState<number>(0);
 
   // 관리자 로그인 여부 추적 (Firebase Auth 세션이 남아있으면 새로고침해도 유지됨)
+  // 수강생도 같은 Firebase Auth를 공유하므로, 단순 로그인 여부가 아니라
+  // admins 컬렉션에 실제로 등록된 계정인지까지 확인합니다.
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
 
   useEffect(() => {
-    const unsubAuth = onAdminAuthStateChanged((user) => {
-      setIsAdminAuthenticated(!!user);
+    const unsubAuth = onAdminAuthStateChanged(async (user) => {
+      if (!user) {
+        setIsAdminAuthenticated(false);
+        return;
+      }
+      try {
+        const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+        setIsAdminAuthenticated(adminDoc.exists());
+      } catch {
+        setIsAdminAuthenticated(false);
+      }
     });
     return () => unsubAuth();
   }, []);
@@ -368,7 +382,9 @@ export default function App() {
               categoryName="자료실"
               onNavigateHome={() => handleNavigate('home')}
             />
-            <MaterialsSection />
+            <StudentAuthGate>
+              <MaterialsSection />
+            </StudentAuthGate>
           </div>
         )}
 

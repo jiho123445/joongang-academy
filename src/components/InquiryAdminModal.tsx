@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { InquiryRecord, Notice } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import { MaterialsAdminPanel } from './MaterialsAdminPanel';
+import { StudentApprovalPanel } from './StudentApprovalPanel';
 import ExcelJS from 'exceljs';
 import { loginAdmin, logoutAdmin, onAdminAuthStateChanged, changeAdminPassword, getCurrentAdminEmail } from '../lib/adminAuth';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import {
   subscribeApplicationsFromFirestore,
   updateApplicationStatusInFirestore,
@@ -54,6 +57,7 @@ import {
   AlertTriangle,
   Flame,
   Award,
+  Users,
 } from 'lucide-react';
 
 export interface PopularCourseAdminItem {
@@ -101,7 +105,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [changePwLoading, setChangePwLoading] = useState<boolean>(false);
 
   // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'
-  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'materials'>('inquiries');
+  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'materials' | 'students'>('inquiries');
 
   // Board Notices (공지사항 & 자격시험 일정) State
   const [boardNotices, setBoardNotices] = useState<Notice[]>([]);
@@ -186,10 +190,28 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   };
 
   // --- Firebase Auth 상태 감지 (로그인 여부는 앱 전역에서 계속 추적) ---
+  // 이제 수강생도 같은 Firebase Auth를 공유해서 로그인하므로, 단순히
+  // "로그인돼 있는지"가 아니라 "실제로 admins 컬렉션에 등록된 관리자 계정인지"
+  // 까지 확인해야 합니다. (안 그러면 수강생 계정으로 로그인한 상태에서 관리자
+  // 화면을 열었을 때 로그인 화면을 건너뛰고 빈 오류투성이 화면이 보이게 됩니다.
+  // 실제 데이터 접근은 Firestore 규칙이 최종적으로 막아주지만, 화면 자체는
+  // 로그인 폼으로 돌아가는 게 훨씬 자연스럽습니다.)
   useEffect(() => {
-    const unsubAuth = onAdminAuthStateChanged((user) => {
-      setIsAuthenticated(!!user);
-      setAuthChecking(false);
+    const unsubAuth = onAdminAuthStateChanged(async (user) => {
+      if (!user) {
+        setIsAuthenticated(false);
+        setAuthChecking(false);
+        return;
+      }
+      try {
+        const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+        setIsAuthenticated(adminDoc.exists());
+      } catch (err) {
+        console.error('관리자 여부 확인 실패:', err);
+        setIsAuthenticated(false);
+      } finally {
+        setAuthChecking(false);
+      }
     });
     return () => unsubAuth();
   }, []);
@@ -1443,9 +1465,22 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 <FileSpreadsheet className="w-4 h-4" />
                 <span>자료실 관리</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('students')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  activeTab === 'students'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>수강생 승인 관리</span>
+              </button>
             </div>
 
-            {activeTab !== 'materials' && (
+            {activeTab !== 'materials' && activeTab !== 'students' && (
               <button
                 onClick={handleExportToExcel}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
@@ -2340,6 +2375,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
           </div>
         ) : activeTab === 'materials' ? (
           <MaterialsAdminPanel />
+        ) : activeTab === 'students' ? (
+          <StudentApprovalPanel />
         ) : (
           /* Admin Inquiry List Content */
           <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
@@ -2677,7 +2714,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
             <span>상담 신청 데이터는 서버에 안전하게 관리·보관됩니다.</span>
           </p>
           <div className="flex items-center gap-3">
-            {isAuthenticated && activeTab !== 'materials' && (
+            {isAuthenticated && activeTab !== 'materials' && activeTab !== 'students' && (
               <button
                 onClick={handleExportToExcel}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"

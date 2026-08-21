@@ -64,3 +64,15 @@ export interface MaterialItem {
   fileSize: number; // bytes
   createdAt: string; // ISO date string
 }
+
+// 자료실 - 수강생 회원가입/승인 관련
+export type StudentStatus = '승인대기' | '승인됨' | '거절됨';
+
+export interface StudentProfile {
+  uid: string;
+  name: string;
+  phone: string;
+  email: string;
+  status: StudentStatus;
+  createdAt: string; // ISO date string
+}
