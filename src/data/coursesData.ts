@@ -278,4 +278,4 @@ export const MATERIAL_COURSE_CATEGORIES: string[] = [
 ];
 
 // 자료실 - 자료 유형 목록
-export const MATERIAL_TYPES = ['서식', '예제', '프로그램', '기타'] as const;
+export const MATERIAL_TYPES = ['학원서식', '내일배움카드 서식', '예제 파일', '기타'] as const;

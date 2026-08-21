@@ -42,7 +42,7 @@ export const MaterialsAdminPanel: React.FC = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [courseCategory, setCourseCategory] = useState(MATERIAL_COURSE_CATEGORIES[0]);
-  const [materialType, setMaterialType] = useState<MaterialItem['materialType']>('서식');
+  const [materialType, setMaterialType] = useState<MaterialItem['materialType']>('학원서식');
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
