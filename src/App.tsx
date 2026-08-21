@@ -256,7 +256,7 @@ export default function App() {
           <div className="animate-fadeIn">
             <PageHeader
               title="학원 소개 & 원장 인사말"
-              subtitle="1969년 설립 이래 50년 넘게 홍천 지역 사회와 함께해온 최고의 컴퓨터 교육기관"
+              subtitle="1999년 설립 이래 홍천 지역 사회와 함께해온 IT·컴퓨터 전문 교육기관"
               categoryName="학원소개"
               onNavigateHome={() => handleNavigate('home')}
             />

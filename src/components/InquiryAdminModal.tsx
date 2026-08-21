@@ -2500,7 +2500,23 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
                         {/* ID & Date */}
                         <td className="p-3.5 whitespace-nowrap">
-                          <span className="font-bold text-slate-800 block">{formatReceiptNumber(item, item.createdAt, inquiries)}</span>
+                          {(() => {
+                            const receiptLabel = formatReceiptNumber(item, item.createdAt, inquiries);
+                            const isFallbackId = receiptLabel.includes('-T');
+                            return (
+                              <span className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-800">{receiptLabel}</span>
+                                {isFallbackId && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-black border border-amber-200"
+                                    title="접수번호 자동채번 실패로 임시번호가 발급되었습니다. 접수 내용 자체는 정상 저장된 신청 건입니다."
+                                  >
+                                    임시번호
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })()}
                           <span className="text-[11px] text-slate-400 block mt-0.5">
                             {new Date(item.createdAt).toLocaleString('ko-KR', {
                               month: 'numeric',

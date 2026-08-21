@@ -16,7 +16,7 @@ import {
   Timestamp,
   FirestoreError,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import { InquiryRecord, Notice } from "../types";
 import { ScheduleItem, PopupNoticeConfig } from "../components/NoticePopupModal";
 import { PopularCourseAdminItem } from "../components/InquiryAdminModal";
@@ -66,11 +66,14 @@ export function formatReceiptNumber(
   let receiptNum = typeof idOrRecord === 'object' ? idOrRecord.receiptNumber : undefined;
   let itemCreatedAt = typeof idOrRecord === 'object' ? idOrRecord.createdAt : createdAt;
 
-  // If receiptNum or id is already formatted as YYMM-N (e.g. 2608-1)
-  if (receiptNum && /^\d{4}-\d+$/.test(receiptNum)) {
+  // If receiptNum or id is already formatted as YYMM-N (정상 발급) or
+  // YYMM-Txxxxxx (채번 실패 시 임시번호) 형태라면 그대로 사용합니다.
+  // 임시번호까지 이 정규식에 포함하지 않으면, 아래 재계산 로직이 임시번호를
+  // 무시하고 다른 번호로 덮어써서 관리자 화면의 "임시번호" 표시가 무력화됩니다.
+  if (receiptNum && /^\d{4}-(\d+|T\d+)$/.test(receiptNum)) {
     return receiptNum;
   }
-  if (id && /^\d{4}-\d+$/.test(id)) {
+  if (id && /^\d{4}-(\d+|T\d+)$/.test(id)) {
     return id;
   }
 
@@ -409,8 +412,13 @@ export function subscribeNoticesFromFirestore(
 
   const parseSnapshot = (snapshot: any) => {
     if (snapshot.empty) {
-      // Seed defaults if empty
-      seedDefaultNotices().catch(console.error);
+      // 기본 공지사항 데이터가 비어 있을 때 자동으로 채워 넣습니다.
+      // 다만 notices에 대한 쓰기 권한은 관리자에게만 있으므로, 로그인하지
+      // 않은 일반 방문자는 시도해봐야 항상 거부됩니다. 불필요한 실패 요청을
+      // 만들지 않도록, 현재 관리자로 로그인된 세션일 때만 시도합니다.
+      if (auth.currentUser) {
+        seedDefaultNotices().catch(console.error);
+      }
       return DEFAULT_NOTICES;
     }
     return snapshot.docs.map((d: any) => {
@@ -572,7 +580,10 @@ export function subscribePopularCoursesFromFirestore(
 
   const parseDocs = (snapshot: any) => {
     if (snapshot.empty) {
-      seedDefaultPopularCourses().catch(console.error);
+      // notices와 동일한 이유로, 관리자 로그인 세션일 때만 시딩을 시도합니다.
+      if (auth.currentUser) {
+        seedDefaultPopularCourses().catch(console.error);
+      }
       return DEFAULT_POPULAR_COURSES;
     }
     const items = snapshot.docs.map((d: any, idx: number) => {
