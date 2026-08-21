@@ -68,7 +68,7 @@ export const HomeHub: React.FC<HomeHubProps> = ({
     {
       id: 'intro',
       title: '학원소개 & 원장인사',
-      desc: '1999년 설립 25년 전통, 1:1 맞춤 지도 실습 환경',
+      desc: '1999년 설립 27년 전통, 1:1 맞춤 지도 실습 환경',
       icon: Award,
       badge: 'SINCE 1999',
       color: 'from-purple-600 to-indigo-700',

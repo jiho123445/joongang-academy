@@ -2,10 +2,26 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // 헬퍼 함수: 관리자 로그인 여부 확인
+
+    // 헬퍼 함수: 관리자 여부 확인
+    // 단순히 "로그인 되어 있으면 관리자"가 아니라, admins 컬렉션에
+    // 본인 UID로 된 문서가 실제로 존재하는 사람만 관리자로 인정합니다.
+    // Firebase Authentication에 계정이 새로 하나 생기더라도, admins 컬렉션에
+    // 등록돼 있지 않으면 자동으로 관리자 권한을 갖지 못합니다.
+    //
+    // ⚠️ 배포 전 필수 작업: Firebase 콘솔 → Firestore Database →
+    //    'admins' 컬렉션 생성 → 원장님 계정의 UID를 문서 ID로 문서 추가
+    //    (Authentication 탭에서 UID 확인 가능, 문서 내용은 { email: "..." } 등 자유)
     function isAdmin() {
-      return request.auth != null;
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // 0. 관리자 목록('admins') - 관리자 본인만 자기 문서를 읽을 수 있고,
+    // 쓰기는 Firebase 콘솔에서 직접 등록/삭제 (클라이언트에서 쓰기 불가)
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
     }
 
     // 1. 공지사항('notices') & 인기강좌('popular_courses')
@@ -40,6 +56,18 @@ service cloud.firestore {
         && request.resource.data.phone.size() <= 20
         && (!('message' in request.resource.data) || request.resource.data.message.size() <= 1000);
       allow read, update, delete: if isAdmin();
+    }
+
+    // 4. 접수번호 카운터('counters') - 수강신청 접수번호(YYMM-N) 발급용
+    // 익명 사용자도 접수번호를 발급받아야 하므로 읽기/생성/증가(update)를 허용하되,
+    // "이전 값 + 1"로만 증가할 수 있도록 제한해 임의 조작이나 되돌리기를 막습니다.
+    // (applications 컬렉션 자체는 읽기가 막혀 있어 신청자 수를 세는 용도로 쓸 수
+    //  없기 때문에, 이 전용 카운터로 원자적(transaction)으로 채번합니다.)
+    match /counters/{counterId} {
+      allow read: if true;
+      allow create: if request.resource.data.count == 1;
+      allow update: if request.resource.data.count == resource.data.count + 1;
+      allow delete: if isAdmin();
     }
 
   }

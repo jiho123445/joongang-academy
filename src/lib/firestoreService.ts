@@ -12,7 +12,9 @@ import {
   onSnapshot,
   serverTimestamp,
   writeBatch,
+  runTransaction,
   Timestamp,
+  FirestoreError,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { InquiryRecord, Notice } from "../types";
@@ -99,6 +101,38 @@ export function formatReceiptNumber(
 // 1. APPLICATIONS COLLECTION (`applications`)
 // =========================================================================
 
+/**
+ * 접수번호(YYMM-N)를 원자적으로 발급합니다.
+ *
+ * 기존 방식은 applications 컬렉션 전체를 읽어(getDocs) 이번 달 건수를 세는
+ * 방식이었는데, 일반 방문자는애초에 applications를 읽을 권한이 없어서(Firestore
+ * 규칙상 read는 관리자 전용) 이 조회가 항상 실패하고 접수번호가 1로 고정되는
+ * 문제가 있었습니다. 그 결과 동시에 신청한 여러 명이 똑같은 접수번호(예: 2608-1)
+ * 를 받을 수 있었습니다.
+ *
+ * 이제는 별도의 counters/{YYMM} 문서를 Firestore 트랜잭션(runTransaction)으로
+ * "이전 값 + 1"만큼만 원자적으로 증가시켜 채번합니다. 트랜잭션은 동시에 여러
+ * 사용자가 접근해도 Firestore가 순서를 보장해 주므로 중복이 발생하지 않고,
+ * counters 컬렉션은 개인정보를 담지 않으므로 공개 읽기/증가를 허용해도 안전합니다.
+ */
+async function getNextReceiptNumber(targetYYMM: string): Promise<string> {
+  const counterRef = doc(db, "counters", targetYYMM);
+
+  const nextSeq = await runTransaction(db, async (transaction) => {
+    const counterSnap = await transaction.get(counterRef);
+    const current = counterSnap.exists() ? (counterSnap.data().count as number) || 0 : 0;
+    const next = current + 1;
+    if (counterSnap.exists()) {
+      transaction.update(counterRef, { count: next });
+    } else {
+      transaction.set(counterRef, { count: next });
+    }
+    return next;
+  });
+
+  return `${targetYYMM}-${nextSeq}`;
+}
+
 export async function submitApplicationToFirestore(data: {
   name: string;
   phone: string;
@@ -108,82 +142,59 @@ export async function submitApplicationToFirestore(data: {
   userCategory: string;
   message: string;
 }): Promise<InquiryRecord> {
-  // Ultra-fast timeout for instant user feedback and quick form reset
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error("Firestore request timeout")), 600);
-  });
-
   const now = new Date();
   const targetYYMM = getYYMMKey(now);
 
-  let nextSeq = 1;
+  // 접수번호를 먼저 원자적으로 발급받습니다. (트랜잭션 실패 시 아래 catch에서
+  // 타임스탬프 기반 임시 번호로 대체하되, 이 경우에도 실제 저장 성공 여부는
+  // 별도로 정직하게 확인합니다 - 아래 참고)
+  let receiptId: string;
   try {
-    const colRef = collection(db, "applications");
-    const snap = await getDocs(colRef);
-    const monthDocs = snap.docs.filter((d) => {
-      const docData = d.data();
-      const docDate = docData.createdAtIso || formatFirestoreTimestamp(docData.createdAt);
-      return getYYMMKey(docDate) === targetYYMM;
-    });
-    nextSeq = monthDocs.length + 1;
+    receiptId = await getNextReceiptNumber(targetYYMM);
   } catch (e) {
-    console.warn("Month count query failed:", e);
+    console.warn("접수번호 채번 실패, 임시 번호로 대체:", e);
+    receiptId = `${targetYYMM}-T${Date.now().toString().slice(-6)}`;
   }
 
-  const receiptId = `${targetYYMM}-${nextSeq}`;
+  const colRef = collection(db, "applications");
+  const docData = {
+    name: data.name.trim(),
+    phone: data.phone.trim(),
+    course: data.courseInterest || "상담 후 결정",
+    courseInterest: data.courseInterest || "상담 후 결정",
+    preferredTime: data.preferredTime || "상관없음",
+    hasNaeilCard: data.hasNaeilCard || "유",
+    userCategory: data.userCategory || "취업준비생",
+    memo: data.message ? data.message.trim() : "",
+    message: data.message ? data.message.trim() : "",
+    status: "상담대기",
+    adminNotes: "",
+    receiptNumber: receiptId,
+    createdAt: serverTimestamp(),
+    createdAtIso: now.toISOString(),
+  };
 
-  try {
-    const colRef = collection(db, "applications");
-    const docData = {
-      name: data.name.trim(),
-      phone: data.phone.trim(),
-      course: data.courseInterest || "상담 후 결정",
-      courseInterest: data.courseInterest || "상담 후 결정",
-      preferredTime: data.preferredTime || "상관없음",
-      hasNaeilCard: data.hasNaeilCard || "유",
-      userCategory: data.userCategory || "취업준비생",
-      memo: data.message ? data.message.trim() : "",
-      message: data.message ? data.message.trim() : "",
-      status: "상담대기",
-      adminNotes: "",
-      receiptNumber: receiptId,
-      createdAt: serverTimestamp(),
-      createdAtIso: now.toISOString(),
-    };
+  // 실제 Firestore 저장이 완료될 때까지 정직하게 기다립니다.
+  // (예전에는 600ms 인위적 타임아웃과 경쟁시켜, 느린 네트워크에서 실제로는
+  //  저장에 성공했는데도 사용자에게는 "가짜 성공"을 보여주거나, 반대로 실패를
+  //  성공처럼 보여주는 문제가 있었습니다. 지금은 addDoc이 끝날 때까지 기다렸다가
+  //  성공하면 진짜 성공, 실패하면 진짜 실패로 안내합니다.)
+  const docRef = await addDoc(colRef, docData);
 
-    const docRef = await Promise.race([addDoc(colRef, docData), timeoutPromise]);
-    const newRecord: InquiryRecord = {
-      id: docRef.id || receiptId,
-      receiptNumber: receiptId,
-      name: docData.name,
-      phone: docData.phone,
-      courseInterest: docData.courseInterest,
-      preferredTime: docData.preferredTime as any,
-      hasNaeilCard: docData.hasNaeilCard as any,
-      userCategory: docData.userCategory as any,
-      message: docData.message,
-      createdAt: docData.createdAtIso,
-      status: "상담대기",
-      adminNotes: "",
-    };
-    return newRecord;
-  } catch (err) {
-    console.warn("submitApplicationToFirestore online write timed out or encountered an issue, fast fallback record generated:", err);
-    return {
-      id: receiptId,
-      receiptNumber: receiptId,
-      name: data.name.trim(),
-      phone: data.phone.trim(),
-      courseInterest: data.courseInterest || "상담 후 결정",
-      preferredTime: (data.preferredTime || "상관없음") as any,
-      hasNaeilCard: (data.hasNaeilCard || "유") as any,
-      userCategory: (data.userCategory || "취업준비생") as any,
-      message: data.message ? data.message.trim() : "",
-      createdAt: now.toISOString(),
-      status: "상담대기",
-      adminNotes: "",
-    };
-  }
+  return {
+    id: docRef.id,
+    receiptNumber: receiptId,
+    name: docData.name,
+    phone: docData.phone,
+    courseInterest: docData.courseInterest,
+    preferredTime: docData.preferredTime as any,
+    hasNaeilCard: docData.hasNaeilCard as any,
+    userCategory: docData.userCategory as any,
+    message: docData.message,
+    createdAt: docData.createdAtIso,
+    status: "상담대기",
+    adminNotes: "",
+  };
 }
 
 export function subscribeApplicationsFromFirestore(
@@ -192,52 +203,44 @@ export function subscribeApplicationsFromFirestore(
   const colRef = collection(db, "applications");
   const q = query(colRef, orderBy("createdAt", "desc"));
 
+  const parseDoc = (d: any) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      receiptNumber: data.receiptNumber || undefined,
+      name: data.name || "",
+      phone: data.phone || "",
+      courseInterest: data.courseInterest || data.course || "상담 후 결정",
+      preferredTime: data.preferredTime || "상관없음",
+      hasNaeilCard: data.hasNaeilCard || "유",
+      userCategory: data.userCategory || "취업준비생",
+      message: data.message || data.memo || "",
+      createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
+      status: data.status || "상담대기",
+      adminNotes: data.adminNotes || "",
+    } as InquiryRecord;
+  };
+
   return onSnapshot(
     q,
     (snapshot) => {
-      const records: InquiryRecord[] = snapshot.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          receiptNumber: data.receiptNumber || undefined,
-          name: data.name || "",
-          phone: data.phone || "",
-          courseInterest: data.courseInterest || data.course || "상담 후 결정",
-          preferredTime: data.preferredTime || "상관없음",
-          hasNaeilCard: data.hasNaeilCard || "유",
-          userCategory: data.userCategory || "취업준비생",
-          message: data.message || data.memo || "",
-          createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
-          status: data.status || "상담대기",
-          adminNotes: data.adminNotes || "",
-        };
-      });
-      onUpdate(records);
+      onUpdate(snapshot.docs.map(parseDoc));
     },
-    (error) => {
-      console.warn("Applications listener query with orderby failed, trying fallback scan:", error);
-      // Fallback listener without orderBy if index is building
-      onSnapshot(colRef, (snapshot) => {
-        const records: InquiryRecord[] = snapshot.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            receiptNumber: data.receiptNumber || undefined,
-            name: data.name || "",
-            phone: data.phone || "",
-            courseInterest: data.courseInterest || data.course || "상담 후 결정",
-            preferredTime: data.preferredTime || "상관없음",
-            hasNaeilCard: data.hasNaeilCard || "유",
-            userCategory: data.userCategory || "취업준비생",
-            message: data.message || data.memo || "",
-            createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
-            status: data.status || "상담대기",
-            adminNotes: data.adminNotes || "",
-          };
+    (error: FirestoreError) => {
+      if (error.code === "failed-precondition") {
+        // 정렬용 인덱스가 아직 빌드 중일 때만 무정렬로 재시도합니다.
+        console.warn("접수내역 정렬 인덱스가 아직 준비되지 않아 무정렬로 재조회합니다:", error);
+        onSnapshot(colRef, (snapshot) => {
+          const records = snapshot.docs.map(parseDoc);
+          records.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+          onUpdate(records);
         });
-        records.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
-        onUpdate(records);
-      });
+      } else {
+        // 이 구독은 관리자 로그인 후에만 호출되도록 되어 있으므로, 여기서
+        // permission-denied가 뜬다면 로그인 세션이 만료됐거나 admins 컬렉션에
+        // 등록되지 않은 계정일 가능성이 큽니다. 재시도 대신 원인을 그대로 남깁니다.
+        console.error("접수내역 구독 실패 (관리자 인증/권한 확인 필요):", error);
+      }
     }
   );
 }
@@ -291,16 +294,16 @@ export async function batchDeleteApplicationsFromFirestore(ids: string[]): Promi
 export const DEFAULT_OPENING_POPUP: PopupNoticeConfig = {
   enabled: true,
   badgeText: "2026년 하반기 신규 개강 안내",
-  title: "홍천 중앙정보처리학원 8~9월 수강생 모집",
+  title: "홍천 중앙정보처리학원 9~10월 수강생 모집",
   subtitle: "국비지원 최대 100% 지원 & 1:1 맞춤 실습 교육",
   content:
     "컴퓨터활용능력(1급/2급), 전산세무회계, 정보처리기능사/기사, GTQ/ITQ 자격증, 시니어 어르신 기초반 수강생을 모집합니다! 지금 신청하시고 국민내일배움카드 혜택을 받으세요.",
-  dateText: "개강일: 2026년 8월 ~ 9월 수시 개강 (오전/오후/야간반 운영)",
+  dateText: "개강일: 2026년 9월 ~ 10월 수시 개강 (오전/오후/야간반 운영)",
   schedules: [
-    { courseName: "컴퓨터활용능력 (1급 / 2급)", startDate: "8월 18일 개강", timeSlot: "오전 10:00 / 야간 19:00" },
-    { courseName: "전산세무회계 (전산회계1급/세무2급)", startDate: "8월 25일 개강", timeSlot: "오후 14:00 / 야간 19:00" },
-    { courseName: "시니어 어르신 왕초보 컴퓨터&스마트폰", startDate: "8월 20일 개강", timeSlot: "오후 13:30 ~ 15:00" },
-    { courseName: "정보처리기능사 / GTQ 포토샵 자격증", startDate: "9월 01일 개강", timeSlot: "오후 15:30 / 야간 19:00" },
+    { courseName: "컴퓨터활용능력 (1급 / 2급)", startDate: "9월 08일 개강", timeSlot: "오전 10:00 / 야간 19:00" },
+    { courseName: "전산세무회계 (전산회계1급/세무2급)", startDate: "9월 15일 개강", timeSlot: "오후 14:00 / 야간 19:00" },
+    { courseName: "시니어 어르신 왕초보 컴퓨터&스마트폰", startDate: "9월 10일 개강", timeSlot: "오후 13:30 ~ 15:00" },
+    { courseName: "정보처리기능사 / GTQ 포토샵 자격증", startDate: "10월 01일 개강", timeSlot: "오후 15:30 / 야간 19:00" },
   ],
   actionText: "지금 온라인 수강신청하기",
 };
@@ -429,20 +432,32 @@ export function subscribeNoticesFromFirestore(
     (snapshot) => {
       onUpdate(parseSnapshot(snapshot));
     },
-    (err) => {
-      console.warn("Notices query with orderBy failed, fallback to unordered:", err);
-      onSnapshot(colRef, (snapshot) => {
-        const notices = parseSnapshot(snapshot);
-        onUpdate(notices);
-      });
+    (err: FirestoreError) => {
+      if (err.code === "failed-precondition") {
+        // 인덱스가 아직 생성/빌드 중일 때만 정렬 없이 재시도합니다.
+        console.warn("공지사항 정렬(orderBy) 인덱스가 아직 준비되지 않아 무정렬로 재조회합니다:", err);
+        onSnapshot(colRef, (snapshot) => {
+          onUpdate(parseSnapshot(snapshot));
+        });
+      } else {
+        // 권한 오류(permission-denied) 등은 재시도해도 해결되지 않으므로,
+        // 원인을 숨기지 않고 그대로 로그로 남깁니다.
+        console.error("공지사항 구독 실패:", err);
+      }
     }
   );
 }
 
 async function seedDefaultNotices() {
+  // addDoc 대신 고정된 문서 ID(setDoc + merge: false는 아니지만 존재 시 덮어쓰는
+  // 방식이 아니라 "이미 있으면 실패"가 아닌 동일 결과를 내도록 결정적 ID를 사용)를
+  // 사용해, 여러 방문자가 동시에 첫 방문해 시딩을 시도해도 중복 문서가 쌓이지
+  // 않고 같은 문서로 수렴하도록 합니다.
   const colRef = collection(db, "notices");
-  for (const n of DEFAULT_NOTICES) {
-    await addDoc(colRef, {
+  for (let i = 0; i < DEFAULT_NOTICES.length; i++) {
+    const n = DEFAULT_NOTICES[i];
+    const seedId = `seed-${i + 1}`;
+    await setDoc(doc(colRef, seedId), {
       title: n.title,
       category: n.category,
       content: n.content,
@@ -592,10 +607,12 @@ export function subscribePopularCoursesFromFirestore(
 }
 
 async function seedDefaultPopularCourses() {
+  // 고정 문서 ID를 사용해 동시 시딩으로 인한 중복 생성을 방지합니다.
   const colRef = collection(db, "popular_courses");
   for (let idx = 0; idx < DEFAULT_POPULAR_COURSES.length; idx++) {
     const c = DEFAULT_POPULAR_COURSES[idx];
-    await addDoc(colRef, {
+    const seedId = `seed-${idx + 1}`;
+    await setDoc(doc(colRef, seedId), {
       courseTitle: c.title,
       title: c.title,
       description: c.description,

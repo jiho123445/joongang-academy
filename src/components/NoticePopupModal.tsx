@@ -168,7 +168,7 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
             </div>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>홍천읍 신장대로 48 위치 (접근성 우수, 25년 전통)</span>
+              <span>홍천읍 신장대로 48 위치 (접근성 우수, 27년 전통)</span>
             </div>
           </div>
 

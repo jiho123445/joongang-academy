@@ -2,23 +2,38 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // 헬퍼 함수: 관리자 로그인 여부 확인
+
+    // 헬퍼 함수: 관리자 여부 확인 (Firestore의 admins 컬렉션과 동일한 기준 사용)
+    // ⚠️ firestore.rules와 동일하게, Firebase 콘솔에서 Firestore의
+    //    'admins/{원장님-UID}' 문서가 등록돼 있어야 이 조건을 통과합니다.
     function isAdmin() {
-      return request.auth != null;
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid));
+    }
+
+    function isAllowedImage() {
+      return request.resource.size < 10 * 1024 * 1024 // 10MB 이하
+        && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
     }
 
     // 1. 활동사진 파일 Storage 경로 ('activities/')
     // 누구나 이미지 조회(read) 가능, 관리자만 업로드 및 삭제(write) 가능
+    // 업로드는 10MB 이하의 JPEG/PNG/WebP 이미지로 제한합니다.
     match /activities/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin() && isAllowedImage();
     }
 
     // 2. 공지사항 첨부 파일 Storage 경로 ('notices/')
+    // 이미지 외에 PDF 첨부도 허용하되, 크기 제한은 동일하게 적용합니다.
     match /notices/{allPaths=**} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.size < 10 * 1024 * 1024
+        && (request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
+            || request.resource.contentType == 'application/pdf');
     }
 
   }

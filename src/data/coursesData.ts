@@ -251,7 +251,7 @@ export const ACADEMY_INFO = {
   name: '홍천 중앙정보처리학원',
   englishName: 'Jungang Information Processing Computer Institute',
   foundedYear: 1999,
-  slogan: '25년 전통의 홍천 대표 IT·컴퓨터 전문 교육기관',
+  slogan: '27년 전통의 홍천 대표 IT·컴퓨터 전문 교육기관',
   director: '홍천 중앙정보처리학원 원장',
   address: '강원도 홍천군 홍천읍 신장대로 48, 2층',
   phone: '033-433-1926~7',
@@ -262,7 +262,7 @@ export const ACADEMY_INFO = {
   domain: 'https://www.jahrd.co.kr/',
   busInfo: '홍천시외버스터미널 도보 5분 / 중앙약국 맞은편 하차',
   features: [
-    { title: '1999년 설립 전통', desc: '25년 이상 축적된 깊은 교육 노하우와 지역 사회 신뢰' },
+    { title: '1999년 설립 전통', desc: '27년 이상 축적된 깊은 교육 노하우와 지역 사회 신뢰' },
     { title: '국민내일배움카드 지정', desc: '고용노동부 인정 국비지원 지정 훈련기관 (최대 100% 지원)' },
     { title: '1인 1대 최신 PC 환경', desc: '시험장과 동일한 최고 사양 컴퓨터 및 인체공학 좌석' },
     { title: '1:1 밀착 소수정예', desc: '개인별 학습 속도에 맞춘 꼼꼼한 실무 중심 맞춤형 지도' },

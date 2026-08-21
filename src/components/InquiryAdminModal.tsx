@@ -135,10 +135,10 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
   // Default 4 schedules
   const defaultSchedules: ScheduleItem[] = [
-    { courseName: '컴퓨터활용능력 (1급 / 2급)', startDate: '8월 18일 개강', timeSlot: '오전 10:00 / 야간 19:00' },
-    { courseName: '전산세무회계 (전산회계1급/세무2급)', startDate: '8월 25일 개강', timeSlot: '오후 14:00 / 야간 19:00' },
-    { courseName: '시니어 어르신 왕초보 컴퓨터&스마트폰', startDate: '8월 20일 개강', timeSlot: '오후 13:30 ~ 15:00' },
-    { courseName: '정보처리기능사 / GTQ 포토샵 자격증', startDate: '9월 01일 개강', timeSlot: '오후 15:30 / 야간 19:00' },
+    { courseName: '컴퓨터활용능력 (1급 / 2급)', startDate: '9월 08일 개강', timeSlot: '오전 10:00 / 야간 19:00' },
+    { courseName: '전산세무회계 (전산회계1급/세무2급)', startDate: '9월 15일 개강', timeSlot: '오후 14:00 / 야간 19:00' },
+    { courseName: '시니어 어르신 왕초보 컴퓨터&스마트폰', startDate: '9월 10일 개강', timeSlot: '오후 13:30 ~ 15:00' },
+    { courseName: '정보처리기능사 / GTQ 포토샵 자격증', startDate: '10월 01일 개강', timeSlot: '오후 15:30 / 야간 19:00' },
   ];
 
   // Popup Notice State
@@ -211,11 +211,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
 
-    const unsubApps = subscribeApplicationsFromFirestore((records) => {
-      setInquiries(records);
-      setLoading(false);
-    });
-
+    // notices/popular_courses/settings는 Firestore 규칙상 누구나 읽을 수 있으므로
+    // 로그인 여부와 무관하게 구독해도 안전합니다.
     const unsubPopup = subscribeOpeningPopupFromFirestore((cfg) => {
       setNoticeConfig(cfg);
     });
@@ -230,12 +227,31 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      unsubApps();
       unsubPopup();
       unsubNotices();
       unsubPopular();
     };
   }, [isOpen, onClose]);
+
+  // applications(수강신청 개인정보)는 Firestore 규칙상 관리자만 읽을 수 있습니다.
+  // 모달이 열려 있어도 아직 로그인 전이면 이 구독을 시도하지 않도록 분리했습니다.
+  // (예전에는 모달을 열기만 해도 로그인 전부터 구독을 시도해 매번 권한 오류가
+  //  발생했습니다.)
+  useEffect(() => {
+    if (!isOpen || !isAuthenticated) {
+      if (!isAuthenticated) setLoading(true);
+      return;
+    }
+
+    const unsubApps = subscribeApplicationsFromFirestore((records) => {
+      setInquiries(records);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubApps();
+    };
+  }, [isOpen, isAuthenticated]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

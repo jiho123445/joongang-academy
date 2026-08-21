@@ -23,6 +23,7 @@ import {
   subscribeOpeningPopupFromFirestore,
   DEFAULT_OPENING_POPUP,
 } from './lib/firestoreService';
+import { onAdminAuthStateChanged } from './lib/adminAuth';
 import { trackPageView } from './lib/analytics';
 
 export default function App() {
@@ -40,14 +41,31 @@ export default function App() {
   // Pending Inquiries Count State for Admin Red Indicator
   const [pendingInquiryCount, setPendingInquiryCount] = useState<number>(0);
 
-  // Real-time Firestore Subscription for Applications Pending Count
+  // 관리자 로그인 여부 추적 (Firebase Auth 세션이 남아있으면 새로고침해도 유지됨)
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
+
   useEffect(() => {
+    const unsubAuth = onAdminAuthStateChanged((user) => {
+      setIsAdminAuthenticated(!!user);
+    });
+    return () => unsubAuth();
+  }, []);
+
+  // Real-time Firestore Subscription for Applications Pending Count
+  // applications 컬렉션은 Firestore 규칙상 관리자만 읽을 수 있으므로,
+  // 일반 방문자에게는 이 구독을 아예 시도하지 않습니다. (예전에는 모든 방문자가
+  // 접근할 때마다 조회를 시도해 매번 권한 오류가 발생했었습니다.)
+  useEffect(() => {
+    if (!isAdminAuthenticated) {
+      setPendingInquiryCount(0);
+      return;
+    }
     const unsubscribe = subscribeApplicationsFromFirestore((records) => {
       const pending = records.filter((r) => r.status === '상담대기' || !r.status).length;
       setPendingInquiryCount(pending);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isAdminAuthenticated]);
 
   // Real-time Firestore Subscription for Opening Popup (`settings/opening_popup`)
   useEffect(() => {
