@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAdminAuth, getAdminDb } from "./_shared/firebaseAdmin";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
 /**
  * POST /api/delete-student
@@ -10,7 +12,33 @@ import { getAdminAuth, getAdminDb } from "./_shared/firebaseAdmin";
  * 대상 계정의 Firebase Authentication 로그인 정보와 Firestore students 문서를
  * 모두 삭제합니다. 클라이언트 SDK만으로는 다른 사람의 Auth 계정을 지울 수
  * 없어서, 이 서버리스 함수가 필요합니다.
+ *
+ * ⚠️ Firebase Admin SDK 초기화 로직을 별도 공유 파일(_shared/*)로 분리하지
+ * 않고 이 파일 안에 직접 포함했습니다. 별도 파일로 분리했을 때 Vercel 배포
+ * 환경에서 "Cannot find module .../_shared/firebaseAdmin" 오류로 함수 자체가
+ * 실행되지 못하는 문제가 있었기 때문입니다(로컬 빌드/타입체크는 정상이었지만
+ * 실제 배포에서만 발생). 이 API 라우트 하나에서만 쓰는 로직이라 굳이 공유
+ * 모듈로 뺄 필요가 없어서, 독립 파일 구조로 되돌렸습니다.
  */
+
+function getServiceAccount() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (!raw) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_KEY 환경변수가 설정되지 않았습니다.");
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_KEY 값이 올바른 JSON 형식이 아닙니다.");
+  }
+}
+
+function getAdminApp() {
+  const existing = getApps();
+  if (existing.length > 0) return existing[0];
+  return initializeApp({ credential: cert(getServiceAccount()) });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "허용되지 않은 요청 방식입니다." });
@@ -29,8 +57,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let adminAuth;
   let adminDb;
   try {
-    adminAuth = getAdminAuth();
-    adminDb = getAdminDb();
+    const app = getAdminApp();
+    adminAuth = getAuth(app);
+    adminDb = getFirestore(app);
   } catch (configErr: any) {
     console.error("Firebase Admin SDK 초기화 실패:", configErr);
     res.status(500).json({ error: "SERVICE_ACCOUNT_NOT_CONFIGURED" });
