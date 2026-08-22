@@ -3,6 +3,7 @@ import { InquiryRecord, Notice } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import { MaterialsAdminPanel } from './MaterialsAdminPanel';
 import { StudentApprovalPanel } from './StudentApprovalPanel';
+import { AccountManagementPanel } from './AccountManagementPanel';
 import ExcelJS from 'exceljs';
 import { loginAdmin, logoutAdmin, onAdminAuthStateChanged, changeAdminPassword, getCurrentAdminEmail } from '../lib/adminAuth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -105,7 +106,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [changePwLoading, setChangePwLoading] = useState<boolean>(false);
 
   // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'
-  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'materials' | 'students'>('inquiries');
+  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'materials' | 'students' | 'accounts'>('inquiries');
 
   // Board Notices (공지사항 & 자격시험 일정) State
   const [boardNotices, setBoardNotices] = useState<Notice[]>([]);
@@ -1478,9 +1479,22 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 <Users className="w-4 h-4" />
                 <span>수강생 승인 관리</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('accounts')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  activeTab === 'accounts'
+                    ? 'bg-slate-600 text-white shadow-md'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>전체 계정 관리</span>
+              </button>
             </div>
 
-            {activeTab !== 'materials' && activeTab !== 'students' && (
+            {activeTab !== 'materials' && activeTab !== 'students' && activeTab !== 'accounts' && (
               <button
                 onClick={handleExportToExcel}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
@@ -2377,6 +2391,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
           <MaterialsAdminPanel />
         ) : activeTab === 'students' ? (
           <StudentApprovalPanel />
+        ) : activeTab === 'accounts' ? (
+          <AccountManagementPanel />
         ) : (
           /* Admin Inquiry List Content */
           <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50">
@@ -2714,7 +2730,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
             <span>상담 신청 데이터는 서버에 안전하게 관리·보관됩니다.</span>
           </p>
           <div className="flex items-center gap-3">
-            {isAuthenticated && activeTab !== 'materials' && activeTab !== 'students' && (
+            {isAuthenticated && activeTab !== 'materials' && activeTab !== 'students' && activeTab !== 'accounts' && (
               <button
                 onClick={handleExportToExcel}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"
