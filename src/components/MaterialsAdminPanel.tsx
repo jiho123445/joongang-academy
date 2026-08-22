@@ -51,6 +51,7 @@ function getFileIcon(fileName: string) {
 export const MaterialsAdminPanel: React.FC = () => {
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [title, setTitle] = useState('');
@@ -67,10 +68,21 @@ export const MaterialsAdminPanel: React.FC = () => {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeMaterialsFromFirestore((data) => {
-      setMaterials(data);
-      setLoading(false);
-    });
+    setLoadError(null);
+    const unsub = subscribeMaterialsFromFirestore(
+      (data) => {
+        setMaterials(data);
+        setLoading(false);
+      },
+      (error) => {
+        setLoading(false);
+        setLoadError(
+          error.code === 'permission-denied'
+            ? '관리자 자료실 읽기 권한이 없습니다. Firebase Firestore 규칙의 admins UID를 확인해 주세요.'
+            : `자료실을 불러오지 못했습니다. (${error.code || 'unknown-error'})`
+        );
+      }
+    );
     return () => unsub();
   }, []);
 
@@ -357,6 +369,12 @@ export const MaterialsAdminPanel: React.FC = () => {
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="font-black text-slate-900 text-sm">등록된 자료 ({materials.length}건)</h3>
         </div>
+
+        {loadError && (
+          <div className="mx-4 mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
+            {loadError}
+          </div>
+        )}
 
         {loading ? (
           <div className="p-8 text-center text-sm text-slate-400">불러오는 중...</div>

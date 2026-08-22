@@ -750,29 +750,32 @@ function parseMaterialSnapshot(snapshot: any): MaterialItem[] {
  * 내용과 무관하므로, 관리자에게는 where 절 없이도 쿼리가 정상 허용됩니다.
  */
 export function subscribeMaterialsFromFirestore(
-  onUpdate: (materials: MaterialItem[]) => void
+  onUpdate: (materials: MaterialItem[]) => void,
+  onError?: (error: FirestoreError) => void
 ): () => void {
   const colRef = collection(db, "materials");
-  const q = query(colRef, orderBy("createdAt", "desc"));
 
+  // 관리자 화면은 보안규칙상 isAdmin()이면 materials 전체 읽기가 허용됩니다.
+  // 여기서는 createdAt 필드의 존재 여부나 인덱스 상태 때문에 목록이 통째로
+  // 사라지는 일을 피하기 위해 Firestore orderBy를 사용하지 않고 전체 문서를
+  // 받은 뒤 브라우저에서 createdAt 기준으로 정렬합니다.
+  // 특히 기존 자료 중 createdAt이 없는 오래된 문서가 섞여 있어도 목록 전체가
+  // 정상적으로 표시되도록 합니다.
   return onSnapshot(
-    q,
-    (snapshot) => onUpdate(parseMaterialSnapshot(snapshot)),
+    colRef,
+    (snapshot) => {
+      const items = parseMaterialSnapshot(snapshot);
+      items.sort((a, b) => {
+        const aTime = Date.parse(a.createdAt || "") || 0;
+        const bTime = Date.parse(b.createdAt || "") || 0;
+        return bTime - aTime;
+      });
+      onUpdate(items);
+    },
     (err: FirestoreError) => {
-      if (err.code === "failed-precondition") {
-        console.warn("자료실 정렬 인덱스가 아직 준비되지 않아 무정렬로 재조회합니다:", err);
-        onSnapshot(
-          colRef,
-          (snapshot) => onUpdate(parseMaterialSnapshot(snapshot)),
-          (fallbackErr) => {
-            console.error("자료실 폴백 구독도 실패:", fallbackErr);
-            onUpdate([]);
-          }
-        );
-      } else {
-        console.error("자료실 구독 실패:", err);
-        onUpdate([]);
-      }
+      console.error("관리자 자료실 구독 실패:", err);
+      onUpdate([]);
+      onError?.(err);
     }
   );
 }
