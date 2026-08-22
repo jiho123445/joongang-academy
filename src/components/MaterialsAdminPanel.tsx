@@ -17,6 +17,7 @@ import {
   subscribeMaterialsFromFirestore,
   uploadMaterialToFirestore,
   deleteMaterialFromFirestore,
+  incrementMaterialDownloadCount,
 } from '../lib/firestoreService';
 
 // 업로드 용량 상한 (Storage 규칙과 동일하게 100MB로 맞춰둠 - 채점프로그램 설치파일 등을 고려)
@@ -26,6 +27,18 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso.slice(0, 10).replace(/-/g, '.');
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatUploader(email: string): string {
+  if (!email) return '관리자';
+  return email.split('@')[0];
 }
 
 function getFileIcon(fileName: string) {
@@ -346,8 +359,10 @@ export const MaterialsAdminPanel: React.FC = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-bold text-slate-900 text-sm truncate">{item.title}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
+                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                       {item.courseCategory} · {item.materialType} · {formatFileSize(item.fileSize)}
+                      {' · '}등록자 {formatUploader(item.uploadedBy)} · {formatDate(item.createdAt)}
+                      {' · '}다운로드 {item.downloadCount ?? 0}회
                     </p>
                   </div>
                   <a
@@ -355,6 +370,7 @@ export const MaterialsAdminPanel: React.FC = () => {
                     download={item.fileName}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => incrementMaterialDownloadCount(item.id)}
                     className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0"
                     title="다운로드"
                   >

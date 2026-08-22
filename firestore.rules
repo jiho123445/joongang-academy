@@ -101,7 +101,17 @@ service cloud.firestore {
     match /materials/{materialId} {
       allow read: if isAdmin()
         || (isApprovedStudent() && resource.data.materialType != '학원서식');
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      // 다운로드 횟수 집계: 승인된 수강생도 downloadCount 필드'만' +1 증가시키는
+      // 업데이트는 예외적으로 허용합니다(다른 필드를 같이 바꾸려는 시도는 막습니다).
+      // 그 외 모든 필드 수정은 관리자만 가능합니다.
+      allow update: if isAdmin()
+        || (
+          isApprovedStudent()
+          && resource.data.materialType != '학원서식'
+          && request.resource.data.downloadCount == resource.data.downloadCount + 1
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['downloadCount'])
+        );
     }
 
     // 6. 수강생 계정('students') - 자료실 이용을 위한 회원가입/승인 정보
@@ -114,7 +124,11 @@ service cloud.firestore {
         && request.auth.uid == uid
         && request.resource.data.status == '승인대기'
         && request.resource.data.name is string && request.resource.data.name.size() > 0
-        && request.resource.data.phone is string && request.resource.data.phone.size() > 0
+        && request.resource.data.phone is string
+        // 010-9079-1234, 033-433-1926처럼 하이픈 포함, 끝자리까지 온전히
+        // 입력된 형식만 허용합니다. 프론트엔드 검증을 우회해도 서버(Firestore)
+        // 단에서 한 번 더 막습니다.
+        && request.resource.data.phone.matches('^0[0-9]{1,2}-[0-9]{3,4}-[0-9]{4}$')
         && request.resource.data.email is string;
       allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
       allow update, delete: if isAdmin();

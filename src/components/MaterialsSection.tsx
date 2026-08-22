@@ -2,12 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { Download, FileText, FileArchive, FileSpreadsheet as FileSpreadsheetIcon, FolderOpen } from 'lucide-react';
 import { MaterialItem } from '../types';
 import { MATERIAL_TYPES } from '../data/coursesData';
-import { subscribeMaterialsFromFirestore } from '../lib/firestoreService';
+import { subscribeMaterialsFromFirestore, incrementMaterialDownloadCount } from '../lib/firestoreService';
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function formatDate(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso.slice(0, 10).replace(/-/g, '.');
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// 등록자 표시는 개인정보 보호 차원에서 이메일 전체가 아니라 '@' 앞부분만 보여줍니다.
+function formatUploader(email: string): string {
+  if (!email) return '관리자';
+  return email.split('@')[0];
 }
 
 function getFileIcon(fileName: string) {
@@ -99,6 +112,7 @@ export const MaterialsSection: React.FC = () => {
                   download={item.fileName}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => incrementMaterialDownloadCount(item.id)}
                   className="p-5 sm:p-6 hover:bg-white/60 transition-colors flex items-center gap-4 group"
                 >
                   <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100">
@@ -111,8 +125,9 @@ export const MaterialsSection: React.FC = () => {
                     {item.description && (
                       <p className="text-xs text-slate-600 mt-0.5 line-clamp-1">{item.description}</p>
                     )}
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {item.materialType} · {formatFileSize(item.fileSize)}
+                    <p className="text-[11px] text-slate-400 mt-1 truncate">
+                      {item.materialType} · {formatFileSize(item.fileSize)} · 등록자 {formatUploader(item.uploadedBy)}
+                      {' · '}{formatDate(item.createdAt)} · 다운로드 {item.downloadCount ?? 0}회
                     </p>
                   </div>
                   <div className="shrink-0 p-2.5 rounded-xl bg-slate-100 group-hover:bg-blue-600 text-slate-500 group-hover:text-white transition-all">

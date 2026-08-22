@@ -15,6 +15,7 @@ import {
   runTransaction,
   Timestamp,
   FirestoreError,
+  increment,
 } from "firebase/firestore";
 import { db, auth, storage } from "./firebase";
 import { InquiryRecord, Notice, MaterialItem } from "../types";
@@ -740,6 +741,8 @@ export function subscribeMaterialsFromFirestore(
         storagePath: data.storagePath || "",
         fileSize: typeof data.fileSize === "number" ? data.fileSize : 0,
         createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
+        uploadedBy: data.uploadedBy || "",
+        downloadCount: typeof data.downloadCount === "number" ? data.downloadCount : 0,
       } as MaterialItem;
     });
 
@@ -820,6 +823,8 @@ export async function uploadMaterialToFirestore(
     fileSize: file.size,
     createdAt: serverTimestamp(),
     createdAtIso: now.toISOString(),
+    uploadedBy: auth.currentUser?.email || "관리자",
+    downloadCount: 0,
   };
 
   const docRef = await addDoc(collection(db, "materials"), docData);
@@ -835,7 +840,24 @@ export async function uploadMaterialToFirestore(
     storagePath: docData.storagePath,
     fileSize: docData.fileSize,
     createdAt: docData.createdAtIso,
+    uploadedBy: docData.uploadedBy,
+    downloadCount: docData.downloadCount,
   };
+}
+
+/**
+ * 자료 다운로드 클릭 시 다운로드 횟수를 1 증가시킵니다. 승인된 수강생도
+ * 호출할 수 있어야 하므로, Firestore 규칙에서 이 필드만 +1 증가시키는
+ * 업데이트는 예외적으로 허용해뒀습니다 (다른 필드는 수정 불가).
+ * 실패해도 사용자 경험에 지장이 없도록 오류는 조용히 무시합니다(다운로드
+ * 자체는 이미 진행 중이므로 카운트 실패로 막을 필요는 없습니다).
+ */
+export async function incrementMaterialDownloadCount(id: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, "materials", id), { downloadCount: increment(1) });
+  } catch (err) {
+    console.warn("다운로드 횟수 기록 실패:", err);
+  }
 }
 
 export async function deleteMaterialFromFirestore(id: string, storagePath: string): Promise<void> {

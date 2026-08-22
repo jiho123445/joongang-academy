@@ -15,6 +15,31 @@ interface StudentAuthGateProps {
 }
 
 /**
+ * 입력 중인 숫자를 한국 전화번호 형식(하이픈 자동 삽입)으로 변환합니다.
+ * - 서울(02) 지역번호: 02-XXX-XXXX / 02-XXXX-XXXX
+ * - 그 외(010, 011, 033 등 3자리 국번): 0XX-XXX-XXXX / 0XX-XXXX-XXXX
+ */
+function formatPhoneInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+
+  if (digits.startsWith('02')) {
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    if (digits.length <= 9) return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  }
+
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  if (digits.length <= 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
+}
+
+// 완성된 형식인지 확인 (예: 033-433-1926, 010-9079-1234).
+// 하이픈 포함, 마지막 4자리까지 다 채워진 경우만 통과시킵니다.
+const COMPLETE_PHONE_REGEX = /^0\d{1,2}-\d{3,4}-\d{4}$/;
+
+/**
  * StudentAuthGate - 자료실 페이지를 감싸서, 로그인/가입/승인 상태에 따라
  * 다른 화면을 보여줍니다.
  *
@@ -94,6 +119,11 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
       if (mode === 'signup') {
         if (!name.trim() || !phone.trim()) {
           setErrorMsg('성함과 연락처를 입력해 주세요.');
+          setIsSubmitting(false);
+          return;
+        }
+        if (!COMPLETE_PHONE_REGEX.test(phone.trim())) {
+          setErrorMsg('연락처를 끝까지 정확히 입력해 주세요. (예: 010-9079-1234)');
           setIsSubmitting(false);
           return;
         }
@@ -191,7 +221,8 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
                       type="tel"
                       placeholder="연락처 (예: 010-1234-5678)"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => setPhone(formatPhoneInput(e.target.value))}
+                      maxLength={13}
                       className="w-full p-3 rounded-xl border border-slate-200 text-sm"
                     />
                   </>

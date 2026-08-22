@@ -63,6 +63,8 @@ export interface MaterialItem {
   storagePath: string; // Storage 경로 (삭제 시 필요)
   fileSize: number; // bytes
   createdAt: string; // ISO date string
+  uploadedBy: string; // 업로드한 관리자 이메일
+  downloadCount: number; // 다운로드 클릭 횟수
 }
 
 // 자료실 - 수강생 회원가입/승인 관련
