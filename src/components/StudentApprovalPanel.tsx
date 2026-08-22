@@ -26,8 +26,41 @@ function subscribeAllStudents(onUpdate: (students: StudentProfile[]) => void): (
   );
 }
 
-async function updateStudentStatus(uid: string, status: '승인됨' | '거절됨'): Promise<void> {
+/**
+ * 수강생 승인 상태를 변경합니다.
+ *
+ * 1차 시도: 서버(api/set-student-approval)를 통해 Firestore 상태 변경과
+ * 동시에 Firebase Authentication Custom Claims(approved: true/false)를
+ * 설정합니다. 이 Claims는 Storage 규칙에서 "승인된 수강생만 실제 파일
+ * 다운로드 가능"을 판단하는 근거로 쓰입니다.
+ *
+ * 서버 기능이 아직 설정되지 않았다면(FIREBASE_SERVICE_ACCOUNT_KEY 미등록),
+ * Firestore 상태만이라도 직접 변경합니다. 이 경우 화면상으로는 승인된
+ * 것처럼 보이지만, 실제 파일 다운로드(Storage) 권한은 Custom Claims가
+ * 없어서 막힐 수 있습니다 - 서버 설정을 완료하시는 것을 권장합니다.
+ */
+async function updateStudentStatus(uid: string, status: '승인됨' | '거절됨'): Promise<{ claimsUpdated: boolean }> {
+  const idToken = await auth.currentUser?.getIdToken();
+
+  if (idToken) {
+    try {
+      const response = await fetch('/api/set-student-approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ uid, status }),
+      });
+      if (response.ok) {
+        return { claimsUpdated: true };
+      }
+      const data = await response.json().catch(() => ({}));
+      console.warn('서버 기반 승인 처리 실패, Firestore만 업데이트합니다:', data);
+    } catch (err) {
+      console.warn('서버 기반 승인 처리 요청 실패, Firestore만 업데이트합니다:', err);
+    }
+  }
+
   await updateDoc(doc(db, 'students', uid), { status });
+  return { claimsUpdated: false };
 }
 
 /**
@@ -89,7 +122,13 @@ export const StudentApprovalPanel: React.FC = () => {
   const handleUpdate = async (uid: string, status: '승인됨' | '거절됨') => {
     setProcessingUid(uid);
     try {
-      await updateStudentStatus(uid, status);
+      const { claimsUpdated } = await updateStudentStatus(uid, status);
+      if (!claimsUpdated && status === '승인됨') {
+        alert(
+          '승인 처리는 됐지만, 서버 설정이 안 돼 있어 실제 파일 다운로드 권한(Storage)은 아직 적용 안 됐을 수 있어요.\n' +
+          'SECURITY_SETUP.md의 서버 설정 안내를 참고해 주세요.'
+        );
+      }
     } catch (err) {
       console.error('상태 변경 실패:', err);
       alert('처리 중 오류가 발생했습니다.');

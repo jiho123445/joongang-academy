@@ -88,21 +88,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 4. 대상 계정의 Authentication 로그인 정보, Firestore 프로필,
     //    전화번호 잠금을 모두 삭제합니다.
-    const deletionTasks = [
-      adminAuth.deleteUser(uid),
-      adminDb.collection("students").doc(uid).delete(),
+    const deletionTasks: { label: string; promise: Promise<unknown> }[] = [
+      { label: "auth", promise: adminAuth.deleteUser(uid) },
+      { label: "students", promise: adminDb.collection("students").doc(uid).delete() },
     ];
     if (phoneToRelease) {
-      deletionTasks.push(adminDb.collection("phoneRegistry").doc(phoneToRelease).delete());
+      deletionTasks.push({
+        label: "phoneRegistry",
+        promise: adminDb.collection("phoneRegistry").doc(phoneToRelease).delete(),
+      });
     }
 
-    const results = await Promise.allSettled(deletionTasks);
+    const results = await Promise.allSettled(deletionTasks.map((t) => t.promise));
 
-    const authResult = results[0];
-    // auth/user-not-found(이미 삭제된 계정)는 실패로 취급하지 않습니다.
-    if (authResult.status === "rejected" && (authResult.reason as any)?.code !== "auth/user-not-found") {
-      console.error("Auth 계정 삭제 실패:", authResult.reason);
-      res.status(500).json({ error: "로그인 계정 삭제 중 오류가 발생했습니다." });
+    // ⚠️ 이전에는 Auth 삭제 결과만 확인하고 나머지(students, phoneRegistry)
+    // 실패는 조용히 무시한 채 무조건 성공으로 응답했습니다. 그러면 예를 들어
+    // "Auth는 지워졌는데 phoneRegistry만 실패로 남는" 부분 실패 상황을
+    // 관리자가 알 방법이 없었습니다. 이제는 각 작업을 개별적으로 확인하고,
+    // 실패한 항목이 있으면(이미 삭제된 상태를 뜻하는 auth/user-not-found는
+    // 제외) 어떤 항목이 실패했는지 그대로 알려줍니다.
+    const failed: string[] = [];
+    results.forEach((result, i) => {
+      if (result.status === "rejected") {
+        const code = (result.reason as any)?.code;
+        if (deletionTasks[i].label === "auth" && code === "auth/user-not-found") {
+          return; // 이미 삭제된 계정은 실패로 취급하지 않음
+        }
+        console.error(`${deletionTasks[i].label} 삭제 실패:`, result.reason);
+        failed.push(deletionTasks[i].label);
+      }
+    });
+
+    if (failed.length > 0) {
+      res.status(500).json({
+        error: `일부 항목 삭제에 실패했습니다: ${failed.join(", ")}. 다시 시도해 주세요.`,
+        failedItems: failed,
+      });
       return;
     }
 

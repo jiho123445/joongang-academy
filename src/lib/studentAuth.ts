@@ -27,6 +27,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  deleteDoc,
   onSnapshot,
   serverTimestamp,
 } from "firebase/firestore";
@@ -87,14 +88,32 @@ export async function signUpStudent(data: {
     throw new Error("이미 등록된 연락처입니다. 같은 번호로는 한 계정만 가입할 수 있어요.");
   }
 
-  await setDoc(doc(db, "students", user.uid), {
-    name: data.name.trim(),
-    phone: data.phone.trim(),
-    email: data.email.trim(),
-    status: "승인대기",
-    createdAt: serverTimestamp(),
-    createdAtIso: new Date().toISOString(),
-  });
+  // 3. 수강생 프로필 생성. 여기서 실패하면(네트워크 오류 등) 앞서 이미
+  //    만들어진 Auth 계정과 phoneRegistry 선점 기록이 "고아 상태"로 남게
+  //    되므로, 반드시 함께 롤백합니다.
+  try {
+    await setDoc(doc(db, "students", user.uid), {
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      email: data.email.trim(),
+      status: "승인대기",
+      createdAt: serverTimestamp(),
+      createdAtIso: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("수강생 프로필 생성 실패 - 계정과 전화번호 선점을 롤백합니다:", err);
+    try {
+      await deleteDoc(phoneRef);
+    } catch (cleanupErr) {
+      console.error("전화번호 선점 롤백 실패:", cleanupErr);
+    }
+    try {
+      await deleteUser(user);
+    } catch (cleanupErr) {
+      console.error("계정 롤백 실패:", cleanupErr);
+    }
+    throw new Error("회원가입 처리 중 오류가 발생했습니다. 다시 시도해 주세요.");
+  }
 
   // 3. 이메일 실소유 확인을 위한 인증 메일 발송 (실패해도 가입 자체는
   //    막지 않고, StudentAuthGate에서 재전송 버튼으로 다시 시도할 수 있습니다.)

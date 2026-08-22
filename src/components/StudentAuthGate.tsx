@@ -162,6 +162,19 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
     return () => unsub();
   }, [authUser]);
 
+  // 승인 상태가 '승인됨'으로 바뀌면, 로그인 토큰에 담긴 Custom Claims
+  // (approved: true)를 최신 상태로 강제 갱신합니다. 관리자가 방금 승인
+  // 처리를 해도 로그인 토큰 자체는 자동으로 갱신되지 않아서, 이 과정이
+  // 없으면 화면에는 "승인됨"으로 보이는데도 실제 파일 다운로드(Storage
+  // 권한 확인)는 옛 토큰 때문에 막히는 경우가 있을 수 있습니다.
+  useEffect(() => {
+    if (authUser && profile?.status === '승인됨') {
+      authUser.getIdToken(true).catch((err) => {
+        console.warn('토큰 갱신 실패(다운로드 시 다시 시도됩니다):', err);
+      });
+    }
+  }, [authUser, profile?.status]);
+
   // 관리자 계정(admins 컬렉션에 등록됨)만 통과시킵니다. students 문서가 없다는
   // 사실만으로는 더 이상 관리자로 간주하지 않습니다(계정 삭제로 리셋된
   // 수강생일 수 있기 때문입니다).

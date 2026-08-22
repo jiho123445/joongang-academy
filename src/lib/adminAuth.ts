@@ -1,10 +1,12 @@
 /**
  * adminAuth.ts - 관리자 인증 모듈
  *
- * Firestore 보안규칙(isAdmin() = request.auth != null)이 실제로 이 로그인 상태를
- * 검사하므로, 여기서 로그인이 성공해야만 관리자 화면의 조회/수정/삭제 요청이
- * Firestore에서 허용됩니다. (예전의 "PIN 4001" 입력은 화면만 가리는 장식이었고
- * 실제 데이터 접근권한과는 무관했습니다.)
+ * 여기서 로그인이 성공해도 그것만으로 관리자 권한이 생기는 건 아닙니다.
+ * 실제 데이터 접근 권한은 Firestore 보안규칙의 isAdmin() 함수가 최종
+ * 판단하는데, 이 함수는 단순 로그인 여부가 아니라 Firestore의 `admins`
+ * 컬렉션에 본인 UID로 된 문서가 실제로 존재하는지까지 확인합니다.
+ * 즉 로그인은 여기(Firebase Authentication)에서, 권한 판단은 Firestore
+ * 규칙(및 서버리스 함수의 Admin SDK 검증)에서 이뤄지는 구조입니다.
  */
 import {
   signInWithEmailAndPassword,
