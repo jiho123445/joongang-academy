@@ -78,11 +78,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
-    // 3. 대상 계정의 Authentication 로그인 정보와 Firestore 프로필을 함께 삭제
-    const results = await Promise.allSettled([
+    // 3. 대상 계정의 phoneRegistry 잠금도 함께 해제합니다. (그렇지 않으면
+    //    계정은 삭제됐는데 전화번호 중복 방지 기록만 남아서, 같은 번호로
+    //    재가입이 계속 막히는 문제가 생깁니다.)
+    const studentDoc = await adminDb.collection("students").doc(uid).get();
+    const phoneToRelease: string | null = studentDoc.exists
+      ? String(studentDoc.data()?.phone || "").replace(/\D/g, "") || null
+      : null;
+
+    // 4. 대상 계정의 Authentication 로그인 정보, Firestore 프로필,
+    //    전화번호 잠금을 모두 삭제합니다.
+    const deletionTasks = [
       adminAuth.deleteUser(uid),
       adminDb.collection("students").doc(uid).delete(),
-    ]);
+    ];
+    if (phoneToRelease) {
+      deletionTasks.push(adminDb.collection("phoneRegistry").doc(phoneToRelease).delete());
+    }
+
+    const results = await Promise.allSettled(deletionTasks);
 
     const authResult = results[0];
     // auth/user-not-found(이미 삭제된 계정)는 실패로 취급하지 않습니다.

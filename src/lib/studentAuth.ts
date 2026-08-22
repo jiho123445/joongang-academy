@@ -5,16 +5,27 @@
  * 수강생인지는 Firestore의 별도 컬렉션(admins / students)으로 구분합니다.
  * 회원가입 직후에는 students/{uid} 문서가 status: '승인대기' 상태로 생성되고,
  * 원장님이 관리자 화면에서 승인해야 자료실 열람 권한(status: '승인됨')이 생깁니다.
+ *
+ * 추가 보호장치 2가지:
+ * 1. 전화번호 중복 가입 방지 - phoneRegistry/{정규화된전화번호} 문서를 통해,
+ *    같은 번호로 여러 이메일 계정을 만드는 것을 막습니다.
+ * 2. 이메일 실소유 확인 - 가입 직후 Firebase의 이메일 인증 메일을 발송하고,
+ *    StudentAuthGate에서 인증 완료 전까지는 자료실 접근을 막습니다. (이메일
+ *    형식만 맞으면 통과되던 이전 문제를 보완합니다.)
  */
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  deleteUser,
   onAuthStateChanged as firebaseOnAuthStateChanged,
   type User,
 } from "firebase/auth";
 import {
   doc,
+  getDoc,
   setDoc,
   onSnapshot,
   serverTimestamp,
@@ -22,29 +33,92 @@ import {
 import { auth, db } from "./firebase";
 import { StudentProfile } from "../types";
 
+/** 전화번호에서 숫자만 남깁니다 (phoneRegistry 문서 ID로 사용). */
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
 export async function signUpStudent(data: {
   name: string;
   phone: string;
   email: string;
   password: string;
 }): Promise<User> {
+  const normalizedPhone = normalizePhone(data.phone);
+  const phoneRef = doc(db, "phoneRegistry", normalizedPhone);
+
+  // 1. 먼저 이 전화번호로 이미 가입된 계정이 있는지 확인합니다 (계정을
+  //    만들기 전에 미리 걸러내서, 불필요한 Auth 계정 생성을 피합니다).
+  try {
+    const existingPhone = await getDoc(phoneRef);
+    if (existingPhone.exists()) {
+      throw new Error("이미 등록된 연락처입니다. 같은 번호로는 한 계정만 가입할 수 있어요.");
+    }
+  } catch (err: any) {
+    if (err instanceof Error && err.message.startsWith("이미 등록된")) throw err;
+    // 조회 자체가 실패한 경우(권한/네트워크)는 일단 진행하고, 아래 2단계의
+    // Firestore 규칙이 최종적으로 중복을 막아줍니다.
+    console.warn("전화번호 중복 확인 실패, 계속 진행합니다:", err);
+  }
+
+  let user: User;
   try {
     const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-    const user = userCredential.user;
-
-    await setDoc(doc(db, "students", user.uid), {
-      name: data.name.trim(),
-      phone: data.phone.trim(),
-      email: data.email.trim(),
-      status: "승인대기",
-      createdAt: serverTimestamp(),
-      createdAtIso: new Date().toISOString(),
-    });
-
-    return user;
+    user = userCredential.user;
   } catch (error: any) {
     throw new Error(getStudentAuthErrorMessage(error?.code));
   }
+
+  // 2. 전화번호를 "선점"합니다. 이미 다른 계정이 그 사이에 선점했다면
+  //    (동시 가입 등 드문 경우), Firestore 규칙이 이 쓰기를 거부합니다 -
+  //    문서가 이미 존재하면 본인이 아닌 쓰기는 update로 취급되어 차단됩니다.
+  try {
+    await setDoc(phoneRef, {
+      uid: user.uid,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn("전화번호 등록 실패(중복 가능성) - 방금 만든 계정을 정리합니다:", err);
+    try {
+      await deleteUser(user);
+    } catch (cleanupErr) {
+      console.error("계정 정리 실패:", cleanupErr);
+    }
+    throw new Error("이미 등록된 연락처입니다. 같은 번호로는 한 계정만 가입할 수 있어요.");
+  }
+
+  await setDoc(doc(db, "students", user.uid), {
+    name: data.name.trim(),
+    phone: data.phone.trim(),
+    email: data.email.trim(),
+    status: "승인대기",
+    createdAt: serverTimestamp(),
+    createdAtIso: new Date().toISOString(),
+  });
+
+  // 3. 이메일 실소유 확인을 위한 인증 메일 발송 (실패해도 가입 자체는
+  //    막지 않고, StudentAuthGate에서 재전송 버튼으로 다시 시도할 수 있습니다.)
+  try {
+    await sendEmailVerification(user);
+  } catch (err) {
+    console.warn("인증 메일 발송 실패:", err);
+  }
+
+  return user;
+}
+
+export async function resendVerificationEmail(): Promise<void> {
+  if (!auth.currentUser) {
+    throw new Error("로그인 상태가 아닙니다.");
+  }
+  await sendEmailVerification(auth.currentUser);
+}
+
+/** 서버에 다시 물어봐서 최신 emailVerified 상태를 가져옵니다. */
+export async function refreshCurrentUser(): Promise<User | null> {
+  if (!auth.currentUser) return null;
+  await auth.currentUser.reload();
+  return auth.currentUser;
 }
 
 export async function loginStudent(email: string, password: string): Promise<User> {
@@ -53,6 +127,32 @@ export async function loginStudent(email: string, password: string): Promise<Use
     return userCredential.user;
   } catch (error: any) {
     throw new Error(getStudentAuthErrorMessage(error?.code));
+  }
+}
+
+/**
+ * 비밀번호 재설정 메일을 보냅니다. (이 시스템은 별도 "아이디"가 없고
+ * 이메일 자체가 로그인 아이디이므로, "아이디 찾기"는 필요 없고 비밀번호
+ * 재설정만 제공합니다.)
+ *
+ * 보안을 위해 Firebase는 존재하지 않는 이메일에 대해서도 에러를 던지지
+ * 않는 것이 기본 동작(계정 존재 여부를 외부에 노출하지 않기 위함)이라,
+ * 이 함수도 항상 "메일을 보냈다"는 동일한 메시지를 보여주는 것을 권장합니다.
+ */
+export async function resetStudentPassword(email: string): Promise<void> {
+  try {
+    await sendPasswordResetEmail(auth, email.trim());
+  } catch (error: any) {
+    // auth/user-not-found는 계정 존재 여부를 알려주는 정보 노출이라, 다른
+    // 오류(잘못된 이메일 형식 등)만 실제 에러로 보여주고 나머지는 조용히
+    // 성공 처리합니다.
+    if (error?.code === "auth/invalid-email") {
+      throw new Error("올바르지 않은 이메일 형식입니다.");
+    }
+    if (error?.code === "auth/too-many-requests") {
+      throw new Error("시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+    }
+    // auth/user-not-found 등은 무시(성공한 것처럼 처리)합니다.
   }
 }
 

@@ -134,5 +134,22 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // 7. 전화번호 중복 가입 방지('phoneRegistry') - 문서 ID가 정규화된
+    // 전화번호(숫자만) 자체입니다. 이미 그 번호로 등록된 문서가 있으면, 다른
+    // 계정이 같은 경로에 쓰기를 시도해도 Firestore가 이를 "생성(create)"이
+    // 아니라 "수정(update)"으로 분류합니다. 아래 규칙은 본인이 아닌 계정의
+    // update/delete를 막아서, 결과적으로 같은 번호로 두 번째 계정을 만드는
+    // 시도가 자동으로 거부되게 합니다.
+    match /phoneRegistry/{phoneId} {
+      // 회원가입 폼은 로그인하기 "전"에 중복 여부를 미리 확인해야 하므로,
+      // 읽기는 공개로 둡니다. 이 문서에는 uid(임의의 식별자)만 들어있고
+      // 이름/이메일 등 개인정보는 없어서, "이 번호가 이미 등록됐는지 여부"만
+      // 알 수 있는 수준이라 노출돼도 안전합니다.
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
   }
 }
