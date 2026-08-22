@@ -798,39 +798,32 @@ export function subscribeMaterialsFromFirestore(
  * studentVisible == true"라는 걸 Firestore가 정적으로 보장할 수 있게
  * 했습니다. 규칙의 조건과 쿼리의 조건이 일치해야 통과된다는 Firestore의
  * 요구사항을 충족시키는 방식입니다.
+ *
+ * ⚠️ orderBy를 쓰지 않는 이유: `where(studentVisible == true)` +
+ * `orderBy(createdAt desc)`를 함께 쓰면 Firestore 콘솔에서 별도로
+ * 만들어줘야 하는 복합 색인(composite index)이 필요합니다. 이 색인이
+ * 아직 없거나 생성이 안 돼 있으면 쿼리 자체가 실패해서, 정작 조건을
+ * 만족하는 승인된 수강생에게도 자료가 하나도 안 보이는 문제가 있었습니다.
+ * 관리자용 함수(subscribeMaterialsFromFirestore)와 마찬가지로 정렬은
+ * 클라이언트에서 처리해, Firebase 콘솔에서 색인을 만들거나 색인 생성이
+ * 끝나길 기다릴 필요 자체를 없앴습니다.
  */
 export function subscribeVisibleMaterialsFromFirestore(
   onUpdate: (materials: MaterialItem[]) => void
 ): () => void {
   const colRef = collection(db, "materials");
-  const qOrdered = query(colRef, where("studentVisible", "==", true), orderBy("createdAt", "desc"));
-  const qUnordered = query(colRef, where("studentVisible", "==", true));
+  const q = query(colRef, where("studentVisible", "==", true));
 
   return onSnapshot(
-    qOrdered,
-    (snapshot) => onUpdate(parseMaterialSnapshot(snapshot)),
+    q,
+    (snapshot) => {
+      const items = parseMaterialSnapshot(snapshot);
+      items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+      onUpdate(items);
+    },
     (err: FirestoreError) => {
-      if (err.code === "failed-precondition") {
-        // studentVisible(등호) + createdAt(정렬) 복합 색인이 아직 생성/빌드
-        // 중일 때만 무정렬로 재시도합니다 (where 절은 그대로 유지해야
-        // 규칙을 계속 통과할 수 있으므로 반드시 남겨둡니다).
-        console.warn("자료실(수강생용) 정렬 인덱스가 아직 준비되지 않아 무정렬로 재조회합니다:", err);
-        onSnapshot(
-          qUnordered,
-          (snapshot) => {
-            const items = parseMaterialSnapshot(snapshot);
-            items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
-            onUpdate(items);
-          },
-          (fallbackErr) => {
-            console.error("자료실(수강생용) 폴백 구독도 실패:", fallbackErr);
-            onUpdate([]);
-          }
-        );
-      } else {
-        console.error("자료실(수강생용) 구독 실패:", err);
-        onUpdate([]);
-      }
+      console.error("자료실(수강생용) 구독 실패:", err);
+      onUpdate([]);
     }
   );
 }
