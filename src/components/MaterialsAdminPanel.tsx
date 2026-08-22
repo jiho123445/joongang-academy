@@ -239,7 +239,7 @@ export const MaterialsAdminPanel: React.FC = () => {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">자료 유형</label>
+            <label className="block text-xs font-bold text-slate-600 mb-1">자료 유형 <span className="text-[10px] font-normal text-slate-400">(예제서식·채점프로그램만 학생 공개)</span></label>
             <select
               value={materialType}
               onChange={(e) => setMaterialType(e.target.value as MaterialItem['materialType'])}

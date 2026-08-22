@@ -732,7 +732,7 @@ function parseMaterialSnapshot(snapshot: any): MaterialItem[] {
       title: data.title || "",
       description: data.description || "",
       courseCategory: data.courseCategory || "공통",
-      materialType: data.materialType || "기타",
+      materialType: data.materialType || "학원서식",
       studentVisible: data.studentVisible !== false, // 예전 문서(필드 없음)는 기본 true로 취급
       fileName: data.fileName || "",
       storagePath: data.storagePath || "",
@@ -847,6 +847,18 @@ export function subscribeVisibleMaterialsFromFirestore(
  * api/download-material.ts가 요청마다 권한을 재확인한 뒤 5분짜리 임시
  * 링크를 새로 발급하는 방식으로 처리합니다 (getMaterialDownloadUrl 참고).
  */
+// 학생 자료실에 공개할 자료 유형은 명시적으로 두 종류만 허용합니다.
+// 기존 데이터의 '예제 파일'은 이전 버전의 명칭이므로 호환성을 위해 계속 공개합니다.
+const STUDENT_VISIBLE_MATERIAL_TYPES = new Set([
+  "예제서식",
+  "채점프로그램",
+  "예제 파일",
+]);
+
+function isStudentVisibleMaterialType(materialType: string): boolean {
+  return STUDENT_VISIBLE_MATERIAL_TYPES.has(materialType);
+}
+
 export async function uploadMaterialToFirestore(
   file: File,
   meta: {
@@ -890,7 +902,7 @@ export async function uploadMaterialToFirestore(
     // 규칙은 문서별로 값이 달라지는 조건(resource.data...)을 검증하려면
     // 쿼리 자체에도 동일한 where 조건이 있어야 하므로, 이 필드 없이는
     // '학원서식 제외' 조건을 규칙만으로 안전하게 걸 수 없습니다.
-    studentVisible: meta.materialType !== '학원서식',
+    studentVisible: isStudentVisibleMaterialType(meta.materialType),
     fileName: file.name,
     storagePath,
     fileSize: file.size,

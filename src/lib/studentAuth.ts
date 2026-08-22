@@ -9,15 +9,13 @@
  * 추가 보호장치 2가지:
  * 1. 전화번호 중복 가입 방지 - phoneRegistry/{정규화된전화번호} 문서를 통해,
  *    같은 번호로 여러 이메일 계정을 만드는 것을 막습니다.
- * 2. 이메일 실소유 확인 - 가입 직후 Firebase의 이메일 인증 메일을 발송하고,
- *    StudentAuthGate에서 인증 완료 전까지는 자료실 접근을 막습니다. (이메일
- *    형식만 맞으면 통과되던 이전 문제를 보완합니다.)
+ * 2. 이메일은 Firebase Authentication이 형식을 검증합니다.
+ *    가입 후 별도의 이메일 실소유 인증은 요구하지 않습니다.
  */
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  sendEmailVerification,
   sendPasswordResetEmail,
   deleteUser,
   onAuthStateChanged as firebaseOnAuthStateChanged,
@@ -115,29 +113,11 @@ export async function signUpStudent(data: {
     throw new Error("회원가입 처리 중 오류가 발생했습니다. 다시 시도해 주세요.");
   }
 
-  // 3. 이메일 실소유 확인을 위한 인증 메일 발송 (실패해도 가입 자체는
-  //    막지 않고, StudentAuthGate에서 재전송 버튼으로 다시 시도할 수 있습니다.)
-  try {
-    await sendEmailVerification(user);
-  } catch (err) {
-    console.warn("인증 메일 발송 실패:", err);
-  }
+  // 4. 이메일 인증은 요구하지 않습니다. Firebase Authentication이
+  //    회원가입 시 이메일 형식을 검증하며, 계정은 승인대기 상태로 생성됩니다.
+
 
   return user;
-}
-
-export async function resendVerificationEmail(): Promise<void> {
-  if (!auth.currentUser) {
-    throw new Error("로그인 상태가 아닙니다.");
-  }
-  await sendEmailVerification(auth.currentUser);
-}
-
-/** 서버에 다시 물어봐서 최신 emailVerified 상태를 가져옵니다. */
-export async function refreshCurrentUser(): Promise<User | null> {
-  if (!auth.currentUser) return null;
-  await auth.currentUser.reload();
-  return auth.currentUser;
 }
 
 export async function loginStudent(email: string, password: string): Promise<User> {

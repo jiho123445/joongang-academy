@@ -45,23 +45,20 @@ service firebase.storage {
             || request.resource.contentType == 'application/pdf');
     }
 
-    // 3. 자료실 파일 Storage 경로 ('materials/') - 서식/예제/채점프로그램 등
-    // 관리자 또는 "승인된 수강생"만 다운로드(read) 가능, 업로드/삭제는 관리자만.
+    // 3. 자료실 파일 Storage 경로 ('materials/')
+    // 학생은 Storage를 직접 읽지 않습니다.
+    // 학생/관리자의 다운로드는 /api/download-material에서 Firebase Admin SDK가
+    // 로그인·승인상태·자료유형을 다시 확인한 뒤 5분짜리 Signed URL을 발급합니다.
+    // 따라서 승인되지 않은 학생이나 학원서식은 파일 URL을 직접 알아도
+    // Storage Rules를 통한 직접 읽기가 차단됩니다.
     //
-    // ⚠️ 설계 변경 이력: 처음에는 Storage 규칙에서 Firestore의 승인 상태를
-    // 직접 조회(firestore.exists())하려 했으나, 이 cross-service 조회는
-    // Firebase 콘솔에서 별도의 "두 서비스 연결 권한" 승인이 필요하고, 이
-    // 단계를 놓치면 오류 메시지 없이 조용히 전부 막혀버리는 문제를 실제로
-    // 겪었습니다. 그다음엔 임시로 "로그인 여부만" 확인하는 느슨한 규칙으로
-    // 대체했었는데, 승인되지 않은 계정도 파일 URL만 알면 이론적으로 접근할
-    // 수 있는 허점이 있었습니다.
-    // 지금은 Custom Claims(로그인 토큰 자체에 담기는 승인 정보)를 사용합니다.
-    // 관리자가 수강생을 승인/거절할 때 api/set-student-approval.ts가
-    // Firebase Authentication 토큰에 approved: true/false를 심어주고,
-    // 이 규칙은 그 값을 바로 확인합니다 - Firestore 재조회가 필요 없어
-    // 콘솔 추가 승인 단계 없이도 안전하게 작동합니다.
+    // 업로드/수정/삭제는 관리자만 허용합니다.
     match /materials/{allPaths=**} {
-      allow read: if isAdmin() || (request.auth != null && request.auth.token.approved == true);
+      // 학생은 Storage를 직접 읽지 않습니다.
+      // 자료 다운로드는 /api/download-material에서 Firebase Admin SDK가
+      // 관리자/승인학생 및 자료유형을 다시 확인한 뒤 5분짜리 Signed URL을 발급합니다.
+      // 따라서 학생의 직접 Storage 접근은 차단합니다.
+      allow read: if isAdmin();
       allow delete: if isAdmin();
       allow create, update: if isAdmin() && request.resource.size < 100 * 1024 * 1024;
     }

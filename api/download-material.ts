@@ -101,8 +101,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const material = materialDoc.data()!;
 
-    // 4. '학원서식'은 관리자만 다운로드 가능 (Firestore 목록 규칙과 동일한 정책)
-    if (!isCallerAdmin && material.materialType === "학원서식") {
+    // 4. 학생은 '예제서식'과 '채점프로그램'만 다운로드할 수 있습니다.
+    // 기존 버전의 '예제 파일' 데이터는 하위 호환을 위해 허용합니다.
+    const studentVisibleTypes = new Set(["예제서식", "채점프로그램", "예제 파일"]);
+    if (!isCallerAdmin && !studentVisibleTypes.has(String(material.materialType || ""))) {
       res.status(403).json({ error: "권한이 없습니다." });
       return;
     }

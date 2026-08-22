@@ -50,7 +50,7 @@ export interface FAQItem {
 }
 
 // 자료실 - 서식/예제/프로그램 등 다운로드 자료
-export type MaterialType = '학원서식' | '예제 파일' | '내일배움카드 서식' | '기타';
+export type MaterialType = '학원서식' | '예제서식' | '채점프로그램';
 
 export interface MaterialItem {
   id: string;
@@ -58,7 +58,7 @@ export interface MaterialItem {
   description?: string;
   courseCategory: string; // 과정명 (예: '컴퓨터활용능력 2급/1급 취득반') 또는 '공통'
   materialType: MaterialType;
-  studentVisible: boolean; // '학원서식'이 아니면 true (Firestore 쿼리 where 절에 사용)
+  studentVisible: boolean; // '예제서식'과 '채점프로그램'만 true (Firestore 쿼리 where 절에 사용)
   fileName: string;
   storagePath: string; // Storage 경로 (다운로드는 매번 api/download-material에서 임시 링크 발급)
   fileSize: number; // bytes
