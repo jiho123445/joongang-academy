@@ -18,6 +18,7 @@ import {
   uploadMaterialToFirestore,
   deleteMaterialFromFirestore,
   getMaterialDownloadUrl,
+  backfillLegacyMaterialsVisibility,
 } from '../lib/firestoreService';
 
 // 업로드 용량 상한 (Storage 규칙과 동일하게 100MB로 맞춰둠 - 채점프로그램 설치파일 등을 고려)
@@ -66,6 +67,7 @@ export const MaterialsAdminPanel: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [isBackfilling, setIsBackfilling] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -209,6 +211,29 @@ export const MaterialsAdminPanel: React.FC = () => {
     }
   };
 
+  // 예전(자료실 공개 필터 기능이 생기기 전)에 등록한 자료는 studentVisible
+  // 필드가 없어서, 홈페이지 자료실(수강생/재원생용) 쿼리에는 아예 잡히지
+  // 않았습니다. 이 버튼으로 한 번만 필드를 채워 넣어 복구합니다.
+  const handleBackfillVisibility = async () => {
+    setIsBackfilling(true);
+    setStatusMessage(null);
+    try {
+      const { updatedCount, totalCount } = await backfillLegacyMaterialsVisibility();
+      setStatusMessage({
+        type: 'success',
+        text:
+          updatedCount > 0
+            ? `예전 자료 ${updatedCount}건(전체 ${totalCount}건 중)의 홈페이지 노출 설정을 복구했습니다.`
+            : `복구할 예전 자료가 없습니다 (전체 ${totalCount}건 모두 정상).`,
+      });
+    } catch (err) {
+      console.error('자료 노출 필드 복구 실패:', err);
+      setStatusMessage({ type: 'error', text: '복구 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' });
+    } finally {
+      setIsBackfilling(false);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 space-y-5">
       {loadError && (
@@ -234,6 +259,26 @@ export const MaterialsAdminPanel: React.FC = () => {
           <span>{statusMessage.text}</span>
         </div>
       )}
+
+      {/* Legacy visibility backfill */}
+      <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+        <div className="text-xs sm:text-sm text-amber-900">
+          <p className="font-black">예전 자료가 홈페이지 자료실에 안 보이나요?</p>
+          <p className="text-amber-700 mt-0.5">
+            자료실 공개 기능이 생기기 전에 등록한 자료는 노출 설정 값이 비어 있어 홈페이지에 표시되지
+            않을 수 있습니다. 아래 버튼을 눌러 한 번 복구해 주세요(여러 번 눌러도 안전합니다).
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleBackfillVisibility}
+          disabled={isBackfilling}
+          className="shrink-0 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-black text-xs flex items-center justify-center gap-2 cursor-pointer"
+        >
+          {isBackfilling ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          <span>{isBackfilling ? '복구 중...' : '예전 자료 노출 복구'}</span>
+        </button>
+      </div>
 
       {/* Upload Form */}
       <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">

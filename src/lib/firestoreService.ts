@@ -836,6 +836,50 @@ export function subscribeVisibleMaterialsFromFirestore(
 }
 
 /**
+ * 예전(자료실 공개 필터 기능이 생기기 전)에 등록된 자료 문서에는
+ * `studentVisible` 필드 자체가 없습니다. 화면(parseMaterialSnapshot)에서는
+ * "필드 없으면 공개로 취급"하도록 기본값을 넣어주지만, 이는 클라이언트에
+ * 데이터가 도착한 *이후*에 적용되는 로직일 뿐입니다.
+ *
+ * 정작 홈페이지 자료실이 사용하는 subscribeVisibleMaterialsFromFirestore는
+ * `where("studentVisible", "==", true)` 쿼리를 쓰는데, Firestore는 해당
+ * 필드가 아예 없는 문서는 이 조건과 일치하지 않는 것으로 보고 서버 단에서
+ * 걸러냅니다. 그 결과 예전 자료들은 관리자 패널(필터 없는 쿼리)에는
+ * 보이지만, 정작 홈페이지 자료실에는 처음부터 내려오지 않는 문제가
+ * 있었습니다.
+ *
+ * 이 함수는 `studentVisible` 필드가 없는 기존 문서를 찾아, 자료 유형
+ * (materialType)에 맞는 값으로 한 번만 채워 넣는 관리자 전용 마이그레이션
+ * 입니다. 실행 후에는 예전 자료도 정상적으로 홈페이지 자료실 쿼리에
+ * 포함됩니다.
+ */
+export async function backfillLegacyMaterialsVisibility(): Promise<{
+  updatedCount: number;
+  totalCount: number;
+}> {
+  const snapshot = await getDocs(collection(db, "materials"));
+  const legacyDocs = snapshot.docs.filter((d) => d.data().studentVisible === undefined);
+
+  if (legacyDocs.length === 0) {
+    return { updatedCount: 0, totalCount: snapshot.size };
+  }
+
+  // Firestore 배치 쓰기는 최대 500개 제한이 있어 500개씩 나눠 처리합니다.
+  const CHUNK_SIZE = 450;
+  for (let i = 0; i < legacyDocs.length; i += CHUNK_SIZE) {
+    const chunk = legacyDocs.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    chunk.forEach((docSnap) => {
+      const materialType = docSnap.data().materialType || "학원서식";
+      batch.update(docSnap.ref, { studentVisible: isStudentVisibleMaterialType(materialType) });
+    });
+    await batch.commit();
+  }
+
+  return { updatedCount: legacyDocs.length, totalCount: snapshot.size };
+}
+
+/**
  * 파일을 Firebase Storage에 업로드하고, 완료되면 Firestore에 메타데이터
  * 문서를 생성합니다. onProgress로 0~100 사이의 업로드 진행률을 전달받을 수
  * 있습니다. (관리자 전용 - Storage/Firestore 규칙상 로그인 없이는 실패합니다.)
