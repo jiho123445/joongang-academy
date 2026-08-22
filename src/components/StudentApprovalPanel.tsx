@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, XCircle, Clock, User, Trash2 } from 'lucide-react';
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { StudentProfile } from '../types';
 
 function subscribeAllStudents(onUpdate: (students: StudentProfile[]) => void): () => void {
@@ -31,19 +31,41 @@ async function updateStudentStatus(uid: string, status: '승인됨' | '거절됨
 }
 
 /**
- * 수강생 등록 정보를 완전히 삭제(리셋)합니다. Firestore의 students/{uid}
- * 문서를 지우므로, 이후 그 계정으로 로그인해도 등록된 정보가 없는 상태로
- * 처리되어 자료실을 이용하려면 다시 회원가입해야 합니다.
+ * 수강생 등록 정보를 완전히 삭제(리셋)합니다.
  *
- * ⚠️ 참고: 이 작업은 Firestore의 프로필 정보만 삭제합니다. Firebase
- * Authentication의 로그인 계정 자체(이메일/비밀번호)는 브라우저(클라이언트)
- * 권한으로는 다른 사람 계정을 지울 수 없어서 그대로 남아있습니다. 다만
- * 프로필이 없으면 자료실 접근이 막히므로, "정보 리셋" 목적은 달성됩니다.
- * 로그인 계정 자체까지 완전히 삭제하려면 Firebase Admin SDK 기반 서버 기능이
- * 별도로 필요합니다.
+ * 1차 시도: 서버(api/delete-student)를 통해 Firebase Authentication 로그인
+ * 계정 자체와 Firestore 프로필을 모두 삭제합니다. 이렇게 해야 같은 이메일로
+ * 처음부터 다시 회원가입할 수 있습니다 (Auth 계정이 남아있으면 "이미 가입된
+ * 이메일입니다" 오류로 재가입이 막힙니다).
+ *
+ * 서버 기능이 아직 설정되지 않았다면(Vercel에 FIREBASE_SERVICE_ACCOUNT_KEY
+ * 환경변수 미등록 - SECURITY_SETUP.md 참고), Firestore 프로필만이라도 삭제하는
+ * 방식으로 대체합니다. 이 경우 자료실 접근은 확실히 막히지만, 같은 이메일로
+ * 재가입하려면 별도로 Firebase 콘솔에서 그 계정을 지워야 합니다.
  */
-async function deleteStudentAccount(uid: string): Promise<void> {
+async function deleteStudentAccount(uid: string): Promise<{ fullyDeleted: boolean }> {
+  const idToken = await auth.currentUser?.getIdToken();
+
+  if (idToken) {
+    try {
+      const response = await fetch('/api/delete-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ uid }),
+      });
+      if (response.ok) {
+        return { fullyDeleted: true };
+      }
+      const data = await response.json().catch(() => ({}));
+      console.warn('서버 기반 계정 삭제 실패, Firestore만 삭제합니다:', data);
+    } catch (err) {
+      console.warn('서버 기반 계정 삭제 요청 실패, Firestore만 삭제합니다:', err);
+    }
+  }
+
+  // 서버 삭제가 안 되면 최소한 Firestore 프로필만이라도 지웁니다.
   await deleteDoc(doc(db, 'students', uid));
+  return { fullyDeleted: false };
 }
 
 export const StudentApprovalPanel: React.FC = () => {
@@ -79,7 +101,14 @@ export const StudentApprovalPanel: React.FC = () => {
   const handleDelete = async (uid: string) => {
     setProcessingUid(uid);
     try {
-      await deleteStudentAccount(uid);
+      const { fullyDeleted } = await deleteStudentAccount(uid);
+      if (!fullyDeleted) {
+        alert(
+          '수강생 정보는 삭제됐지만, 로그인 계정 자체는 서버 설정이 안 돼 있어 그대로 남아있어요.\n' +
+          '같은 이메일로 재가입하려면 Firebase 콘솔(Authentication)에서 별도로 계정을 지워야 해요.\n' +
+          '(SECURITY_SETUP.md의 서버 설정 안내를 참고해 주세요)'
+        );
+      }
     } catch (err) {
       console.error('수강생 정보 삭제 실패:', err);
       alert('삭제 중 오류가 발생했습니다.');
