@@ -243,7 +243,10 @@ export function subscribeApplicationsFromFirestore(
         // 이 구독은 관리자 로그인 후에만 호출되도록 되어 있으므로, 여기서
         // permission-denied가 뜬다면 로그인 세션이 만료됐거나 admins 컬렉션에
         // 등록되지 않은 계정일 가능성이 큽니다. 재시도 대신 원인을 그대로 남깁니다.
+        // (다만 onUpdate는 반드시 호출해서, 로딩 스피너가 영원히 멈추지 않는
+        // 문제가 생기지 않도록 합니다.)
         console.error("접수내역 구독 실패 (관리자 인증/권한 확인 필요):", error);
+        onUpdate([]);
       }
     }
   );
@@ -752,9 +755,23 @@ export function subscribeMaterialsFromFirestore(
     (err: FirestoreError) => {
       if (err.code === "failed-precondition") {
         console.warn("자료실 정렬 인덱스가 아직 준비되지 않아 무정렬로 재조회합니다:", err);
-        onSnapshot(colRef, (snapshot) => onUpdate(parseSnapshot(snapshot)));
+        onSnapshot(
+          colRef,
+          (snapshot) => onUpdate(parseSnapshot(snapshot)),
+          (fallbackErr) => {
+            // 폴백 구독까지 실패하면(예: 진짜 권한 문제) 여기서도 반드시
+            // onUpdate를 호출해 로딩 상태가 끝나도록 합니다.
+            console.error("자료실 폴백 구독도 실패:", fallbackErr);
+            onUpdate([]);
+          }
+        );
       } else {
+        // ⚠️ 이전에는 이 분기에서 onUpdate를 호출하지 않아서, 권한 오류 등이
+        // 발생하면 화면의 로딩 스피너가 영원히 멈추지 않는 버그가 있었습니다.
+        // 실패했더라도 반드시 onUpdate를 호출해서(빈 배열로) 로딩 상태를
+        // 끝내주고, 원인은 콘솔에 로그로 남겨 디버깅할 수 있게 합니다.
         console.error("자료실 구독 실패:", err);
+        onUpdate([]);
       }
     }
   );
