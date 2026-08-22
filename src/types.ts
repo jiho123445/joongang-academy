@@ -59,8 +59,7 @@ export interface MaterialItem {
   courseCategory: string; // 과정명 (예: '컴퓨터활용능력 2급/1급 취득반') 또는 '공통'
   materialType: MaterialType;
   fileName: string;
-  fileURL: string;
-  storagePath: string; // Storage 경로 (삭제 시 필요)
+  storagePath: string; // Storage 경로 (다운로드는 매번 api/download-material에서 임시 링크 발급)
   fileSize: number; // bytes
   createdAt: string; // ISO date string
   uploadedBy: string; // 업로드한 관리자 이메일

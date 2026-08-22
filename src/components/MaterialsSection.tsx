@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Download, FileText, FileArchive, FileSpreadsheet as FileSpreadsheetIcon, FolderOpen } from 'lucide-react';
+import { Download, FileText, FileArchive, FileSpreadsheet as FileSpreadsheetIcon, FolderOpen, Loader2 } from 'lucide-react';
 import { MaterialItem } from '../types';
 import { MATERIAL_TYPES } from '../data/coursesData';
-import { subscribeMaterialsFromFirestore, incrementMaterialDownloadCount } from '../lib/firestoreService';
+import { subscribeMaterialsFromFirestore, getMaterialDownloadUrl } from '../lib/firestoreService';
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
@@ -34,6 +34,7 @@ export const MaterialsSection: React.FC = () => {
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedType, setSelectedType] = useState<string>('전체');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = subscribeMaterialsFromFirestore((data) => {
@@ -46,6 +47,19 @@ export const MaterialsSection: React.FC = () => {
   const filtered = materials.filter((m) => {
     return selectedType === '전체' || m.materialType === selectedType;
   });
+
+  const handleDownload = async (item: MaterialItem) => {
+    if (downloadingId) return;
+    setDownloadingId(item.id);
+    try {
+      const { url } = await getMaterialDownloadUrl(item.id);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err: any) {
+      alert(err?.message || '다운로드에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
 
   return (
@@ -105,15 +119,14 @@ export const MaterialsSection: React.FC = () => {
           ) : (
             filtered.map((item) => {
               const Icon = getFileIcon(item.fileName);
+              const isThisDownloading = downloadingId === item.id;
               return (
-                <a
+                <button
                   key={item.id}
-                  href={item.fileURL}
-                  download={item.fileName}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => incrementMaterialDownloadCount(item.id)}
-                  className="p-5 sm:p-6 hover:bg-white/60 transition-colors flex items-center gap-4 group"
+                  type="button"
+                  onClick={() => handleDownload(item)}
+                  disabled={downloadingId !== null}
+                  className="w-full text-left p-5 sm:p-6 hover:bg-white/60 transition-colors flex items-center gap-4 group disabled:opacity-70 disabled:cursor-wait"
                 >
                   <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100">
                     <Icon className="w-5 h-5" />
@@ -131,9 +144,13 @@ export const MaterialsSection: React.FC = () => {
                     </p>
                   </div>
                   <div className="shrink-0 p-2.5 rounded-xl bg-slate-100 group-hover:bg-blue-600 text-slate-500 group-hover:text-white transition-all">
-                    <Download className="w-4 h-4" />
+                    {isThisDownloading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
                   </div>
-                </a>
+                </button>
               );
             })
           )}

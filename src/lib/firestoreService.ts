@@ -15,7 +15,6 @@ import {
   runTransaction,
   Timestamp,
   FirestoreError,
-  increment,
 } from "firebase/firestore";
 import { db, auth, storage } from "./firebase";
 import { InquiryRecord, Notice, MaterialItem } from "../types";
@@ -740,7 +739,6 @@ export function subscribeMaterialsFromFirestore(
         courseCategory: data.courseCategory || "공통",
         materialType: data.materialType || "기타",
         fileName: data.fileName || "",
-        fileURL: data.fileURL || "",
         storagePath: data.storagePath || "",
         fileSize: typeof data.fileSize === "number" ? data.fileSize : 0,
         createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
@@ -781,6 +779,14 @@ export function subscribeMaterialsFromFirestore(
  * 파일을 Firebase Storage에 업로드하고, 완료되면 Firestore에 메타데이터
  * 문서를 생성합니다. onProgress로 0~100 사이의 업로드 진행률을 전달받을 수
  * 있습니다. (관리자 전용 - Storage/Firestore 규칙상 로그인 없이는 실패합니다.)
+ *
+ * ⚠️ 업로드 시점에 getDownloadURL()로 영구 다운로드 링크를 만들어 저장하지
+ * 않습니다. Firebase Storage의 다운로드 토큰 URL은 보안 규칙(storage.rules)
+ * 자체를 우회하는 특성이 있어서, 그 URL을 아는 사람은 승인 여부·로그인
+ * 여부와 무관하게 파일을 받을 수 있는 문제가 있었습니다. 이제는 storagePath
+ * (실제 다운로드 링크가 아닌 내부 경로)만 저장해두고, 실제 다운로드는
+ * api/download-material.ts가 요청마다 권한을 재확인한 뒤 5분짜리 임시
+ * 링크를 새로 발급하는 방식으로 처리합니다 (getMaterialDownloadUrl 참고).
  */
 export async function uploadMaterialToFirestore(
   file: File,
@@ -792,25 +798,13 @@ export async function uploadMaterialToFirestore(
   },
   onProgress?: (percent: number) => void
 ): Promise<MaterialItem> {
-  const { ref, uploadBytesResumable, getDownloadURL } = await import("firebase/storage");
+  const { ref, uploadBytesResumable } = await import("firebase/storage");
 
   const safeFileName = file.name.replace(/[^\w.\-가-힣 ]/g, "_");
   const storagePath = `materials/${meta.courseCategory}/${Date.now()}_${safeFileName}`;
   const storageRef = ref(storage, storagePath);
 
-  // Content-Disposition을 'attachment'로 지정해, 이미지/PDF 파일을 링크로 열었을 때
-  // 브라우저가 새 탭에 "미리보기"로 띄우지 않고 곧바로 다운로드하도록 만듭니다.
-  // (단순히 <a download> 속성만 쓰면 Firebase Storage처럼 다른 도메인(cross-origin)의
-  // 파일에는 브라우저에 따라 무시될 수 있어서, 서버 응답 헤더 자체에 지정하는
-  // 이 방식이 훨씬 안정적입니다.) 한글 파일명도 깨지지 않도록 RFC 5987 형식의
-  // filename*=UTF-8''... 구문을 함께 넣어줍니다.
-  const asciiFallbackName = file.name.replace(/[^\x00-\x7F]/g, "_");
-  const contentDisposition =
-    `attachment; filename="${asciiFallbackName}"; filename*=UTF-8''${encodeURIComponent(file.name)}`;
-
-  const uploadTask = uploadBytesResumable(storageRef, file, {
-    contentDisposition,
-  });
+  const uploadTask = uploadBytesResumable(storageRef, file);
 
   await new Promise<void>((resolve, reject) => {
     uploadTask.on(
@@ -826,7 +820,6 @@ export async function uploadMaterialToFirestore(
     );
   });
 
-  const fileURL = await getDownloadURL(storageRef);
   const now = new Date();
 
   const docData = {
@@ -835,7 +828,6 @@ export async function uploadMaterialToFirestore(
     courseCategory: meta.courseCategory,
     materialType: meta.materialType,
     fileName: file.name,
-    fileURL,
     storagePath,
     fileSize: file.size,
     createdAt: serverTimestamp(),
@@ -853,7 +845,6 @@ export async function uploadMaterialToFirestore(
     courseCategory: docData.courseCategory,
     materialType: docData.materialType,
     fileName: docData.fileName,
-    fileURL: docData.fileURL,
     storagePath: docData.storagePath,
     fileSize: docData.fileSize,
     createdAt: docData.createdAtIso,
@@ -863,20 +854,38 @@ export async function uploadMaterialToFirestore(
 }
 
 /**
+ * 자료 다운로드를 위한 임시(5분) 서명 URL을 서버(api/download-material)에
+ * 요청합니다. 요청할 때마다 서버가 로그인/승인 여부를 다시 확인하므로,
+ * 승인되지 않은 계정은 애초에 링크 자체를 받을 수 없습니다. 다운로드
+ * 횟수 집계도 이 안에서 서버가 함께 처리합니다.
+ */
+export async function getMaterialDownloadUrl(materialId: string): Promise<{ url: string; fileName: string }> {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  const response = await fetch("/api/download-material", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ materialId }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "다운로드 링크 발급에 실패했습니다.");
+  }
+
+  return response.json();
+}
+
+/**
  * 자료 다운로드 클릭 시 다운로드 횟수를 1 증가시킵니다. 승인된 수강생도
  * 호출할 수 있어야 하므로, Firestore 규칙에서 이 필드만 +1 증가시키는
  * 업데이트는 예외적으로 허용해뒀습니다 (다른 필드는 수정 불가).
  * 실패해도 사용자 경험에 지장이 없도록 오류는 조용히 무시합니다(다운로드
  * 자체는 이미 진행 중이므로 카운트 실패로 막을 필요는 없습니다).
  */
-export async function incrementMaterialDownloadCount(id: string): Promise<void> {
-  try {
-    await updateDoc(doc(db, "materials", id), { downloadCount: increment(1) });
-  } catch (err) {
-    console.warn("다운로드 횟수 기록 실패:", err);
-  }
-}
-
 export async function deleteMaterialFromFirestore(id: string, storagePath: string): Promise<void> {
   try {
     const { ref, deleteObject } = await import("firebase/storage");

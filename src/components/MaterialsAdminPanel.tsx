@@ -17,7 +17,7 @@ import {
   subscribeMaterialsFromFirestore,
   uploadMaterialToFirestore,
   deleteMaterialFromFirestore,
-  incrementMaterialDownloadCount,
+  getMaterialDownloadUrl,
 } from '../lib/firestoreService';
 
 // 업로드 용량 상한 (Storage 규칙과 동일하게 100MB로 맞춰둠 - 채점프로그램 설치파일 등을 고려)
@@ -64,6 +64,7 @@ export const MaterialsAdminPanel: React.FC = () => {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = subscribeMaterialsFromFirestore((data) => {
@@ -170,6 +171,19 @@ export const MaterialsAdminPanel: React.FC = () => {
     setIsUploading(false);
     setUploadProgress(0);
     setUploadingIndex(0);
+  };
+
+  const handleDownload = async (item: MaterialItem) => {
+    if (downloadingId) return;
+    setDownloadingId(item.id);
+    try {
+      const { url } = await getMaterialDownloadUrl(item.id);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err: any) {
+      alert(err?.message || '다운로드에 실패했습니다.');
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const handleDelete = async (item: MaterialItem) => {
@@ -365,17 +379,19 @@ export const MaterialsAdminPanel: React.FC = () => {
                       {' · '}다운로드 {item.downloadCount ?? 0}회
                     </p>
                   </div>
-                  <a
-                    href={item.fileURL}
-                    download={item.fileName}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => incrementMaterialDownloadCount(item.id)}
-                    className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0"
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(item)}
+                    disabled={downloadingId !== null}
+                    className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0 disabled:opacity-60"
                     title="다운로드"
                   >
-                    <Download className="w-4 h-4" />
-                  </a>
+                    {downloadingId === item.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
+                  </button>
                   {confirmDeleteId === item.id ? (
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
