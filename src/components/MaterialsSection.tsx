@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
 import { Download, FileText, FileArchive, FileSpreadsheet as FileSpreadsheetIcon, FolderOpen, Loader2 } from 'lucide-react';
 import { MaterialItem } from '../types';
 import { MATERIAL_TYPES } from '../data/coursesData';
-import { subscribeVisibleMaterialsFromFirestore, getMaterialDownloadUrl } from '../lib/firestoreService';
+import { db } from '../lib/firebase';
+import { onStudentAuthStateChanged } from '../lib/studentAuth';
+import {
+  subscribeVisibleMaterialsFromFirestore,
+  subscribeMaterialsFromFirestore,
+  getMaterialDownloadUrl,
+} from '../lib/firestoreService';
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
@@ -35,14 +42,48 @@ export const MaterialsSection: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedType, setSelectedType] = useState<string>('전체');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  // undefined = 관리자 여부 확인 중 (이 단계에서는 아직 어떤 목록도 구독하지 않습니다)
+  const [isAdminViewer, setIsAdminViewer] = useState<boolean | undefined>(undefined);
+
+  // 관리자 로그인 상태라면 학원서식을 포함한 전체 자료를, 그 외(비로그인/수강생)에는
+  // 기존처럼 학생에게 공개된 자료만 보여주기 위해 admins 컬렉션에 본인 UID로 된
+  // 문서가 있는지 확인합니다. (StudentAuthGate가 이미 같은 방식으로 관리자를
+  // 판별하지만, 그 결과를 이 컴포넌트로 전달해주지 않으므로 여기서 별도로 확인합니다.)
+  useEffect(() => {
+    let cancelled = false;
+    const unsub = onStudentAuthStateChanged((user) => {
+      if (!user) {
+        if (!cancelled) setIsAdminViewer(false);
+        return;
+      }
+      getDoc(doc(db, 'admins', user.uid))
+        .then((snap) => {
+          if (!cancelled) setIsAdminViewer(snap.exists());
+        })
+        .catch(() => {
+          if (!cancelled) setIsAdminViewer(false);
+        });
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, []);
 
   useEffect(() => {
-    const unsub = subscribeVisibleMaterialsFromFirestore((data) => {
-      setMaterials(data);
-      setIsLoading(false);
-    });
+    if (isAdminViewer === undefined) return; // 관리자 여부 확인 전에는 구독하지 않음
+    setIsLoading(true);
+    const unsub = isAdminViewer
+      ? subscribeMaterialsFromFirestore((data) => {
+          setMaterials(data);
+          setIsLoading(false);
+        })
+      : subscribeVisibleMaterialsFromFirestore((data) => {
+          setMaterials(data);
+          setIsLoading(false);
+        });
     return () => unsub();
-  }, []);
+  }, [isAdminViewer]);
 
   const filtered = materials.filter((m) => {
     return selectedType === '전체' || m.materialType === selectedType;
