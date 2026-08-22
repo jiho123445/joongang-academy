@@ -753,22 +753,20 @@ export function subscribeMaterialsFromFirestore(
   onUpdate: (materials: MaterialItem[]) => void,
   onError?: (error: FirestoreError) => void
 ): () => void {
+  // 관리자 목록은 orderBy를 사용하지 않습니다.
+  // 기존 자료 중 createdAt 필드가 없거나 형식이 다른 문서가 있어도
+  // 관리자 목록 전체가 비어 보이지 않도록 원본 컬렉션을 그대로 읽은 뒤
+  // 브라우저에서 날짜순으로 정렬합니다.
   const colRef = collection(db, "materials");
 
-  // 관리자 화면은 보안규칙상 isAdmin()이면 materials 전체 읽기가 허용됩니다.
-  // 여기서는 createdAt 필드의 존재 여부나 인덱스 상태 때문에 목록이 통째로
-  // 사라지는 일을 피하기 위해 Firestore orderBy를 사용하지 않고 전체 문서를
-  // 받은 뒤 브라우저에서 createdAt 기준으로 정렬합니다.
-  // 특히 기존 자료 중 createdAt이 없는 오래된 문서가 섞여 있어도 목록 전체가
-  // 정상적으로 표시되도록 합니다.
   return onSnapshot(
     colRef,
     (snapshot) => {
       const items = parseMaterialSnapshot(snapshot);
       items.sort((a, b) => {
-        const aTime = Date.parse(a.createdAt || "") || 0;
-        const bTime = Date.parse(b.createdAt || "") || 0;
-        return bTime - aTime;
+        const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return db - da;
       });
       onUpdate(items);
     },
