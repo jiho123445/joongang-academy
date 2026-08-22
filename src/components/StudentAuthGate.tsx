@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, UserPlus, LogIn, Clock, XCircle, LogOut, User as UserIcon } from 'lucide-react';
 import type { User } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { StudentProfile } from '../types';
 import {
   signUpStudent,
@@ -44,15 +46,18 @@ const COMPLETE_PHONE_REGEX = /^0\d{1,2}-\d{3,4}-\d{4}$/;
  * 다른 화면을 보여줍니다.
  *
  * - 비로그인: 로그인/회원가입 폼
- * - 로그인했지만 students 문서가 없는 경우(관리자 계정 등): 그대로 통과
+ * - 로그인했고 admins 컬렉션에 등록된 관리자 계정인 경우: 그대로 통과
  * - 로그인했고 수강생인데 승인대기: "승인 대기 중" 안내
  * - 로그인했고 수강생인데 거절됨: 안내 + 문의 유도
  * - 로그인했고 수강생 승인됨: 자료실(children) 표시
+ * - 로그인은 됐는데 관리자도 아니고 students 문서도 없는 경우: 관리자가 계정
+ *   정보를 삭제(리셋)한 상태이므로, 통과시키지 않고 재가입을 안내합니다.
  */
 export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) => {
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = 확인 중
   const [profile, setProfile] = useState<StudentProfile | null | undefined>(undefined);
   const [profileLoadError, setProfileLoadError] = useState(false);
+  const [isAdminAccount, setIsAdminAccount] = useState<boolean | undefined>(undefined); // undefined = 확인 중
 
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [name, setName] = useState('');
@@ -68,10 +73,34 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
       setAuthUser(user);
       if (!user) {
         setProfile(null);
+        setIsAdminAccount(false);
       }
     });
     return () => unsub();
   }, []);
+
+  // admins 컬렉션에 실제로 등록된 계정인지 명시적으로 확인합니다. (예전에는
+  // "students 문서가 없으면 관리자"로 단순 추정했는데, 관리자가 수강생 계정을
+  // 삭제해서 정보를 리셋한 경우에도 마찬가지로 students 문서가 없어져서
+  // 관리자 계정으로 잘못 인식되어 승인 없이 통과되는 문제가 있었습니다.)
+  useEffect(() => {
+    if (!authUser) {
+      setIsAdminAccount(false);
+      return;
+    }
+    let cancelled = false;
+    setIsAdminAccount(undefined);
+    getDoc(doc(db, 'admins', authUser.uid))
+      .then((snap) => {
+        if (!cancelled) setIsAdminAccount(snap.exists());
+      })
+      .catch(() => {
+        if (!cancelled) setIsAdminAccount(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser]);
 
   useEffect(() => {
     if (!authUser) {
@@ -94,8 +123,13 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
     return () => unsub();
   }, [authUser]);
 
-  // students 컬렉션에 문서가 없는 로그인 계정(예: 관리자 계정)은 자료실을 바로 통과시킵니다.
-  const isNonStudentAccount = authUser && profile === null;
+  // 관리자 계정(admins 컬렉션에 등록됨)만 통과시킵니다. students 문서가 없다는
+  // 사실만으로는 더 이상 관리자로 간주하지 않습니다(계정 삭제로 리셋된
+  // 수강생일 수 있기 때문입니다).
+  const isVerifiedAdmin = authUser && isAdminAccount === true;
+  // 관리자도 아니고 students 문서도 없는 상태: 계정이 리셋됐거나(관리자가
+  // 삭제) 정상적으로 가입 절차를 거치지 않은 경우입니다.
+  const isResetOrUnregistered = authUser && isAdminAccount === false && profile === null;
 
   const resetForm = () => {
     setName('');
@@ -292,6 +326,20 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
     );
   }
 
+  // 관리자 여부 확인 중
+  if (isAdminAccount === undefined) {
+    return (
+      <div className="max-w-md mx-auto py-16 text-center text-sm text-slate-400">
+        확인 중...
+      </div>
+    );
+  }
+
+  // 관리자 계정: 자료실 승인 절차 없이 바로 통과
+  if (isVerifiedAdmin) {
+    return <>{children}</>;
+  }
+
   // 프로필 확인 중
   if (profile === undefined) {
     return (
@@ -301,9 +349,33 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
     );
   }
 
-  // 관리자 등 students 문서가 없는 계정: 바로 통과
-  if (isNonStudentAccount) {
-    return <>{children}</>;
+  // 관리자도 아니고 students 문서도 없는 상태: 관리자가 계정 정보를 삭제해
+  // 리셋했거나, 정상 가입 절차를 거치지 않은 경우입니다. 통과시키지 않고
+  // 재가입을 안내합니다.
+  if (isResetOrUnregistered) {
+    return (
+      <div className="max-w-md mx-auto px-4">
+        <div className="bg-white/70 backdrop-blur-xl rounded-3xl border border-white/80 shadow-xl p-8 text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
+            <UserIcon className="w-7 h-7" />
+          </div>
+          <h3 className="text-lg font-black text-slate-900">등록된 계정 정보가 없어요</h3>
+          <p className="text-sm text-slate-500">
+            이 계정의 수강생 정보가 초기화됐어요. 자료실을 이용하시려면 다시 회원가입해 주세요.
+          </p>
+          <button
+            onClick={async () => {
+              await logoutStudent();
+              setMode('signup');
+            }}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            로그아웃하고 다시 가입하기
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // 수강생 - 승인대기
