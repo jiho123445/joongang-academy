@@ -840,12 +840,21 @@ export async function uploadMaterialToFirestore(
 
 export async function deleteMaterialFromFirestore(id: string, storagePath: string): Promise<void> {
   try {
-    // Storage 파일 삭제 (이미 지워졌거나 존재하지 않으면 무시)
+    const { ref, deleteObject } = await import("firebase/storage");
     try {
-      const { ref, deleteObject } = await import("firebase/storage");
       await deleteObject(ref(storage, storagePath));
-    } catch (storageErr) {
-      console.warn("Storage 파일 삭제 실패 (이미 삭제되었을 수 있음):", storageErr);
+    } catch (storageErr: any) {
+      // 파일이 이미 삭제되어 존재하지 않는 경우만 무시하고 계속 진행합니다.
+      // 그 외의 오류(권한 문제, 네트워크 오류 등)는 Storage 파일이 실제로는
+      // 그대로 남아있는 상태이므로, 여기서 무시하고 넘어가면 "목록에서는
+      // 사라졌는데 실제 파일은 Storage에 그대로 남는" 고아 파일 문제가
+      // 생깁니다. 그래서 이 경우엔 Firestore 기록도 지우지 않고 오류를
+      // 그대로 던져서, 관리자 화면에 실패로 표시되고 다시 시도할 수 있게 합니다.
+      if (storageErr?.code !== "storage/object-not-found") {
+        console.error("Storage 파일 삭제 실패 (Firestore 기록은 보존됨):", storageErr);
+        throw storageErr;
+      }
+      console.warn("Storage 파일이 이미 존재하지 않아 건너뜁니다:", storagePath);
     }
     await deleteDoc(doc(db, "materials", id));
   } catch (err) {

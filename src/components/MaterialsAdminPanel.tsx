@@ -3,6 +3,7 @@ import {
   Upload,
   FileText,
   Trash2,
+  X,
   Download,
   Loader2,
   CheckCircle2,
@@ -38,7 +39,7 @@ export const MaterialsAdminPanel: React.FC = () => {
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [courseCategory, setCourseCategory] = useState(MATERIAL_COURSE_CATEGORIES[0]);
@@ -46,6 +47,7 @@ export const MaterialsAdminPanel: React.FC = () => {
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingIndex, setUploadingIndex] = useState(0); // 몇 번째 파일을 업로드 중인지 (0-based)
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -59,56 +61,102 @@ export const MaterialsAdminPanel: React.FC = () => {
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files;
+    const files: File[] = fileList ? Array.from(fileList) : [];
+    if (files.length === 0) return;
 
-    if (file.size > MAX_FILE_SIZE) {
-      setStatusMessage({ type: 'error', text: `파일 용량은 최대 ${formatFileSize(MAX_FILE_SIZE)}까지 업로드할 수 있습니다.` });
-      e.target.value = '';
-      return;
+    const oversized = files.filter((f) => f.size > MAX_FILE_SIZE);
+    const validFiles = files.filter((f) => f.size <= MAX_FILE_SIZE);
+
+    if (oversized.length > 0) {
+      setStatusMessage({
+        type: 'error',
+        text: `${oversized.map((f) => f.name).join(', ')} 파일은 최대 ${formatFileSize(MAX_FILE_SIZE)}를 초과해 제외됐습니다.`,
+      });
+    } else {
+      setStatusMessage(null);
     }
 
-    setSelectedFile(file);
-    if (!title) {
-      // 확장자를 뺀 파일명을 제목 기본값으로 채워줍니다.
-      setTitle(file.name.replace(/\.[^/.]+$/, ''));
+    // 같은 파일을 다시 선택했을 때 중복 추가되지 않도록 이름+크기 기준으로 걸러냅니다.
+    setSelectedFiles((prev) => {
+      const existingKeys = new Set(prev.map((f) => `${f.name}_${f.size}`));
+      const toAdd = validFiles.filter((f) => !existingKeys.has(`${f.name}_${f.size}`));
+      return [...prev, ...toAdd];
+    });
+
+    // 파일이 하나뿐이고 제목이 비어 있으면 확장자를 뺀 파일명을 기본값으로 채워줍니다.
+    // (여러 개를 선택한 경우엔 제목을 공통으로 쓰지 않고 파일명을 그대로 각자 제목으로 사용합니다.)
+    if (validFiles.length === 1 && !title) {
+      setTitle(validFiles[0].name.replace(/\.[^/.]+$/, ''));
     }
-    setStatusMessage(null);
+
+    e.target.value = '';
+  };
+
+  const handleRemoveSelectedFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) {
+    if (selectedFiles.length === 0) {
       setStatusMessage({ type: 'error', text: '업로드할 파일을 선택해 주세요.' });
       return;
     }
-    if (!title.trim()) {
+    if (selectedFiles.length === 1 && !title.trim()) {
       setStatusMessage({ type: 'error', text: '자료 제목을 입력해 주세요.' });
       return;
     }
 
     setIsUploading(true);
     setUploadProgress(0);
+    setUploadingIndex(0);
     setStatusMessage(null);
 
-    try {
-      await uploadMaterialToFirestore(
-        selectedFile,
-        { title, description, courseCategory, materialType },
-        (percent) => setUploadProgress(percent)
-      );
-      setStatusMessage({ type: 'success', text: `'${title}' 자료가 업로드되었습니다.` });
-      setSelectedFile(null);
+    const failedFiles: string[] = [];
+    let successCount = 0;
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      setUploadingIndex(i);
+      setUploadProgress(0);
+
+      // 파일이 하나면 입력한 제목을 그대로 쓰고, 여러 개면 각 파일명(확장자 제외)을
+      // 개별 제목으로 사용합니다. 설명/과정/유형은 선택한 모든 파일에 공통 적용됩니다.
+      const itemTitle = selectedFiles.length === 1 ? title : file.name.replace(/\.[^/.]+$/, '');
+
+      try {
+        await uploadMaterialToFirestore(
+          file,
+          { title: itemTitle, description, courseCategory, materialType },
+          (percent) => setUploadProgress(percent)
+        );
+        successCount++;
+      } catch (err) {
+        console.error(`'${file.name}' 업로드 실패:`, err);
+        failedFiles.push(file.name);
+      }
+    }
+
+    if (failedFiles.length === 0) {
+      setStatusMessage({
+        type: 'success',
+        text: successCount === 1 ? `'${title}' 자료가 업로드되었습니다.` : `${successCount}개 자료가 업로드되었습니다.`,
+      });
+      setSelectedFiles([]);
       setTitle('');
       setDescription('');
-      const fileInput = document.getElementById('material-file-input') as HTMLInputElement | null;
-      if (fileInput) fileInput.value = '';
-    } catch (err) {
-      console.error('자료 업로드 실패:', err);
-      setStatusMessage({ type: 'error', text: '업로드 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' });
-    } finally {
-      setIsUploading(false);
-      setUploadProgress(0);
+    } else {
+      setStatusMessage({
+        type: 'error',
+        text: `${successCount}개 성공, ${failedFiles.length}개 실패했습니다. (실패: ${failedFiles.join(', ')})`,
+      });
+      // 실패한 파일만 다시 선택 목록에 남겨서 재시도하기 쉽게 합니다.
+      setSelectedFiles((prev) => prev.filter((f) => failedFiles.includes(f.name)));
     }
+
+    setIsUploading(false);
+    setUploadProgress(0);
+    setUploadingIndex(0);
   };
 
   const handleDelete = async (item: MaterialItem) => {
@@ -178,13 +226,16 @@ export const MaterialsAdminPanel: React.FC = () => {
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">자료 제목 *</label>
+          <label className="block text-xs font-bold text-slate-600 mb-1">
+            자료 제목 {selectedFiles.length <= 1 ? '*' : '(여러 파일 선택 시 파일명이 각각 제목이 됩니다)'}
+          </label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            disabled={selectedFiles.length > 1}
             placeholder="예: 컴활 1급 실기 예제 파일 (2026)"
-            className="w-full p-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm"
+            className="w-full p-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm disabled:bg-slate-50 disabled:text-slate-400"
           />
         </div>
 
@@ -200,21 +251,42 @@ export const MaterialsAdminPanel: React.FC = () => {
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">파일 선택 *</label>
+          <label className="block text-xs font-bold text-slate-600 mb-1">파일 선택 * (여러 개 선택 가능)</label>
           <input
             id="material-file-input"
             type="file"
+            multiple
             onChange={handleFileSelect}
             className="w-full text-xs sm:text-sm file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-700 file:font-bold file:cursor-pointer cursor-pointer"
           />
           <p className="text-[11px] text-slate-400 mt-1">
-            최대 {formatFileSize(MAX_FILE_SIZE)}까지 업로드 가능합니다. 채점프로그램(.exe) 등 실행 파일은
+            파일당 최대 {formatFileSize(MAX_FILE_SIZE)}까지 업로드 가능합니다. 채점프로그램(.exe) 등 실행 파일은
             브라우저 보안 경고를 피하기 위해 .zip으로 압축해서 올리는 것을 권장합니다.
           </p>
-          {selectedFile && (
-            <p className="text-xs text-slate-600 mt-1.5 font-semibold">
-              선택됨: {selectedFile.name} ({formatFileSize(selectedFile.size)})
-            </p>
+
+          {selectedFiles.length > 0 && (
+            <div className="mt-2.5 space-y-1.5">
+              {selectedFiles.map((file, idx) => (
+                <div
+                  key={`${file.name}_${file.size}_${idx}`}
+                  className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200"
+                >
+                  <span className="flex-1 min-w-0 text-xs text-slate-700 font-semibold truncate">
+                    {file.name}
+                  </span>
+                  <span className="text-[11px] text-slate-400 shrink-0">{formatFileSize(file.size)}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveSelectedFile(idx)}
+                    disabled={isUploading}
+                    className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 cursor-pointer disabled:opacity-40"
+                    title="선택 목록에서 제거"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
@@ -226,7 +298,11 @@ export const MaterialsAdminPanel: React.FC = () => {
                 style={{ width: `${uploadProgress}%` }}
               />
             </div>
-            <p className="text-[11px] text-slate-500 font-bold">업로드 중... {uploadProgress}%</p>
+            <p className="text-[11px] text-slate-500 font-bold">
+              {selectedFiles.length > 1
+                ? `업로드 중... (${uploadingIndex + 1}/${selectedFiles.length}) ${uploadProgress}%`
+                : `업로드 중... ${uploadProgress}%`}
+            </p>
           </div>
         )}
 
@@ -243,7 +319,7 @@ export const MaterialsAdminPanel: React.FC = () => {
           ) : (
             <>
               <Upload className="w-4 h-4" />
-              <span>자료 업로드</span>
+              <span>{selectedFiles.length > 1 ? `자료 ${selectedFiles.length}개 업로드` : '자료 업로드'}</span>
             </>
           )}
         </button>

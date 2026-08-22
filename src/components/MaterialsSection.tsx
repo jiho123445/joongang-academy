@@ -34,15 +34,6 @@ export const MaterialsSection: React.FC = () => {
     return selectedType === '전체' || m.materialType === selectedType;
   });
 
-  // 필터 버튼은 정해진 전체 유형 목록이 아니라, 지금 실제로 조회 가능한(=권한이
-  // 있는) 자료들 중에 실존하는 유형만 뽑아서 보여줍니다. 예를 들어 '학원서식'은
-  // Firestore 규칙상 관리자만 조회 가능하고 승인된 수강생에게는 애초에 목록에
-  // 내려오지 않으므로, 수강생 화면에는 이 필터 버튼 자체가 나타나지 않고
-  // 관리자 화면(관리자 로그인 시 이 페이지를 그대로 통과)에는 정상적으로
-  // 나타납니다. 항상 눌러도 결과가 없는 죽은 버튼을 두지 않기 위함입니다.
-  const availableTypes = MATERIAL_TYPES.filter((t) =>
-    materials.some((m) => m.materialType === t)
-  );
 
   return (
     <section id="materials" className="py-12 lg:py-20 bg-transparent">
@@ -65,7 +56,7 @@ export const MaterialsSection: React.FC = () => {
         {/* Type Filter */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 mb-8">
           <span className="text-xs font-bold text-slate-500 shrink-0">유형</span>
-          {['전체', ...availableTypes].map((t) => (
+          {['전체', ...MATERIAL_TYPES].map((t) => (
             <button
               key={t}
               onClick={() => setSelectedType(t)}
