@@ -1,24 +1,42 @@
 import { test, expect } from '@playwright/test';
+import { closeOpeningPopupIfVisible } from './helpers';
 
 test.describe('모바일 기본 동작', () => {
-  test('모바일에서도 가로 스크롤 없이 핵심 콘텐츠가 보인다', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('body')).toBeVisible();
-
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow).toBeLessThanOrEqual(2);
+  test.use({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
   });
 
-  test('모바일 메뉴가 존재하고 동작 가능한 경우 열 수 있다', async ({ page }) => {
-    await page.goto('/');
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await closeOpeningPopupIfVisible(page);
+  });
 
-    const menuButton = page.getByRole('button', { name: /메뉴|menu/i }).first();
-    if (await menuButton.count()) {
-      await menuButton.click();
-      await expect(page.getByText('교육과정', { exact: true }).first()).toBeVisible();
-    } else {
-      // Some responsive implementations keep navigation visible without a menu button.
-      await expect(page.getByText('교육과정', { exact: true }).first()).toBeVisible();
-    }
+  test('모바일 메뉴를 열고 교육과정 메뉴를 사용할 수 있다', async ({ page }) => {
+    const toggle = page.locator('#mobile-menu-toggle');
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+
+    const courseButton = page
+      .locator('header button:visible')
+      .filter({ hasText: /^교육과정$/ })
+      .last();
+
+    await expect(courseButton).toBeVisible();
+    await courseButton.click();
+
+    await expect(page).toHaveURL(/#courses$/);
+    await expect(
+      page.getByRole('heading', { name: '전체 교육과정', exact: true })
+    ).toBeVisible();
+  });
+
+  test('모바일 화면에 가로 스크롤이 생기지 않는다', async ({ page }) => {
+    const overflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
   });
 });
