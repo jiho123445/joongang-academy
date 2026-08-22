@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Download, FileText, FileArchive, FileSpreadsheet as FileSpreadsheetIcon, FolderOpen, Loader2 } from 'lucide-react';
 import { MaterialItem } from '../types';
 import { MATERIAL_TYPES } from '../data/coursesData';
-import { subscribeMaterialsFromFirestore, getMaterialDownloadUrl } from '../lib/firestoreService';
+import { subscribeVisibleMaterialsFromFirestore, getMaterialDownloadUrl } from '../lib/firestoreService';
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
@@ -37,7 +37,7 @@ export const MaterialsSection: React.FC = () => {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeMaterialsFromFirestore((data) => {
+    const unsub = subscribeVisibleMaterialsFromFirestore((data) => {
       setMaterials(data);
       setIsLoading(false);
     });

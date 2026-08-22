@@ -34,3 +34,42 @@ View your app in AI Studio: https://ai.studio/apps/ca4abb49-e194-408b-a23c-33685
 즉 로컬에서 테스트할 땐 `server.ts`가, 실제 배포 환경에서는 `api/*.ts`가
 같은 역할(AI 상담, 자료 다운로드, 관리자 계정 관리 등)을 나눠서 담당하는
 구조입니다. 두 곳의 로직이 서로 다르게 바뀌지 않도록 주의가 필요합니다.
+
+
+## 자동 E2E 테스트 (Playwright)
+
+기존 애플리케이션 코드는 변경하지 않고 `tests/e2e/`에 별도의 브라우저 자동 테스트를 추가했습니다.
+
+### 로컬에서 1회 설치
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+### 테스트 실행
+
+```bash
+npm run test:e2e
+```
+
+UI 모드:
+
+```bash
+npm run test:e2e:ui
+```
+
+HTML 보고서:
+
+```bash
+npm run test:e2e:report
+```
+
+### 중요한 운영 원칙
+
+- 기본 E2E 테스트는 로컬 개발 서버(`npm run dev`)를 대상으로 합니다.
+- 실제 운영 Firebase 데이터에 학생 생성/삭제를 수행하는 테스트는 기본 실행하지 않습니다.
+- 관리자 로그인 테스트는 `TEST_ADMIN_EMAIL`과 `TEST_ADMIN_PASSWORD`가 설정된 경우에만 실행됩니다.
+- 운영 계정 비밀번호, Firebase 서비스 계정 키, Gemini API 키를 저장소에 넣지 마세요.
+- 실제 회원가입/승인/삭제를 자동화하려면 별도의 Firebase 테스트 프로젝트를 만들고 그 프로젝트만 사용해야 합니다.
+- CI에서는 `TEST_BASE_URL`을 스테이징 환경으로 지정해 운영 데이터와 분리하는 것을 권장합니다.

@@ -58,6 +58,7 @@ export interface MaterialItem {
   description?: string;
   courseCategory: string; // 과정명 (예: '컴퓨터활용능력 2급/1급 취득반') 또는 '공통'
   materialType: MaterialType;
+  studentVisible: boolean; // '학원서식'이 아니면 true (Firestore 쿼리 where 절에 사용)
   fileName: string;
   storagePath: string; // Storage 경로 (다운로드는 매번 api/download-material에서 임시 링크 발급)
   fileSize: number; // bytes

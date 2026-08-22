@@ -94,19 +94,26 @@ service cloud.firestore {
     // 가능하며, 쓰기(업로드 기록 생성/삭제)는 관리자만 가능합니다.
     //
     // ⚠️ '학원서식' 유형은 학원 내부용 서류 성격이라, 승인된 수강생이어도
-    // 볼 수 없고 관리자만 조회 가능하도록 별도로 막았습니다. Firestore는
-    // 쿼리(list) 결과에서도 문서 하나하나에 이 규칙을 적용해 걸러내므로,
-    // 수강생이 자료 목록을 구독해도 '학원서식' 문서는 애초에 목록에
-    // 포함되지 않습니다(따로 필터링할 필요 없이 서버 단에서 걸러집니다).
+    // 볼 수 없고 관리자만 조회 가능하도록 별도로 막았습니다.
+    //
+    // ⚠️ 중요: 이 조건은 `studentVisible` 필드(불리언)로 판단합니다.
+    // `resource.data.materialType != '학원서식'`처럼 문서마다 값이 다른
+    // 조건을 쓰면 안 되는 이유는, Firestore 쿼리 보안 규칙은 "필터"가
+    // 아니라 "쿼리가 반환할 수 있는 모든 문서가 규칙을 통과해야 쿼리 전체가
+    // 허용되는" 방식이기 때문입니다. 클라이언트 쿼리에 정확히 이 필드에
+    // 대한 where 절이 있어야(subscribeVisibleMaterialsFromFirestore 참고)
+    // Firestore가 "이 쿼리의 모든 결과는 studentVisible == true"임을
+    // 정적으로 보장할 수 있고, 그래야 승인된 수강생의 조회가 정상 허용됩니다.
+    // (이 field 없이 문서 내용 기반 조건만 썼을 때는, 컬렉션에 학원서식이
+    // 하나라도 있으면 승인된 수강생의 조회 자체가 통째로 거부되는 문제가
+    // 있었습니다.)
     match /materials/{materialId} {
       allow read: if isAdmin()
-        || (isApprovedStudent() && resource.data.materialType != '학원서식');
+        || (isApprovedStudent() && resource.data.studentVisible == true);
       // 자료 업로드/삭제/수정(다운로드 횟수 포함)은 전부 관리자만 가능합니다.
-      // 예전에는 승인된 수강생이 downloadCount 필드만 +1 하는 것을 예외로
-      // 허용했었는데, 이제 다운로드 횟수는 api/download-material.ts가
-      // Firebase Admin SDK로 서버에서 직접 집계합니다(Admin SDK는 이 규칙
-      // 자체를 거치지 않으므로 별도 예외가 필요 없습니다). 클라이언트가
-      // 직접 이 값을 조작할 수 있는 경로를 없애 더 안전해졌습니다.
+      // 다운로드 횟수는 api/download-material.ts가 Firebase Admin SDK로
+      // 서버에서 직접 집계합니다(Admin SDK는 이 규칙 자체를 거치지 않으므로
+      // 별도 예외가 필요 없습니다).
       allow write: if isAdmin();
     }
 

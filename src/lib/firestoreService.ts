@@ -8,6 +8,7 @@ import {
   updateDoc,
   deleteDoc,
   query,
+  where,
   orderBy,
   onSnapshot,
   serverTimestamp,
@@ -723,52 +724,110 @@ export async function deletePopularCourseFromFirestore(id: string): Promise<void
 // MATERIALS COLLECTION (`materials`) - 자료실 (서식/예제/프로그램 다운로드)
 // =========================================================================
 
+function parseMaterialSnapshot(snapshot: any): MaterialItem[] {
+  return snapshot.docs.map((d: any) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      title: data.title || "",
+      description: data.description || "",
+      courseCategory: data.courseCategory || "공통",
+      materialType: data.materialType || "기타",
+      studentVisible: data.studentVisible !== false, // 예전 문서(필드 없음)는 기본 true로 취급
+      fileName: data.fileName || "",
+      storagePath: data.storagePath || "",
+      fileSize: typeof data.fileSize === "number" ? data.fileSize : 0,
+      createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
+      uploadedBy: data.uploadedBy || "",
+      downloadCount: typeof data.downloadCount === "number" ? data.downloadCount : 0,
+    } as MaterialItem;
+  });
+}
+
+/**
+ * 관리자 전용 - 자료실 전체 목록을 제한 없이 구독합니다('학원서식' 포함).
+ * Firestore 규칙의 isAdmin() 조건은 요청자 UID에 대해서만 결정되고 문서
+ * 내용과 무관하므로, 관리자에게는 where 절 없이도 쿼리가 정상 허용됩니다.
+ */
 export function subscribeMaterialsFromFirestore(
   onUpdate: (materials: MaterialItem[]) => void
 ): () => void {
   const colRef = collection(db, "materials");
   const q = query(colRef, orderBy("createdAt", "desc"));
 
-  const parseSnapshot = (snapshot: any): MaterialItem[] =>
-    snapshot.docs.map((d: any) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        title: data.title || "",
-        description: data.description || "",
-        courseCategory: data.courseCategory || "공통",
-        materialType: data.materialType || "기타",
-        fileName: data.fileName || "",
-        storagePath: data.storagePath || "",
-        fileSize: typeof data.fileSize === "number" ? data.fileSize : 0,
-        createdAt: data.createdAtIso || formatFirestoreTimestamp(data.createdAt),
-        uploadedBy: data.uploadedBy || "",
-        downloadCount: typeof data.downloadCount === "number" ? data.downloadCount : 0,
-      } as MaterialItem;
-    });
-
   return onSnapshot(
     q,
-    (snapshot) => onUpdate(parseSnapshot(snapshot)),
+    (snapshot) => onUpdate(parseMaterialSnapshot(snapshot)),
     (err: FirestoreError) => {
       if (err.code === "failed-precondition") {
         console.warn("자료실 정렬 인덱스가 아직 준비되지 않아 무정렬로 재조회합니다:", err);
         onSnapshot(
           colRef,
-          (snapshot) => onUpdate(parseSnapshot(snapshot)),
+          (snapshot) => onUpdate(parseMaterialSnapshot(snapshot)),
           (fallbackErr) => {
-            // 폴백 구독까지 실패하면(예: 진짜 권한 문제) 여기서도 반드시
-            // onUpdate를 호출해 로딩 상태가 끝나도록 합니다.
             console.error("자료실 폴백 구독도 실패:", fallbackErr);
             onUpdate([]);
           }
         );
       } else {
-        // ⚠️ 이전에는 이 분기에서 onUpdate를 호출하지 않아서, 권한 오류 등이
-        // 발생하면 화면의 로딩 스피너가 영원히 멈추지 않는 버그가 있었습니다.
-        // 실패했더라도 반드시 onUpdate를 호출해서(빈 배열로) 로딩 상태를
-        // 끝내주고, 원인은 콘솔에 로그로 남겨 디버깅할 수 있게 합니다.
         console.error("자료실 구독 실패:", err);
+        onUpdate([]);
+      }
+    }
+  );
+}
+
+/**
+ * 승인된 수강생(및 자료실 공개 페이지를 함께 보는 관리자)용 - '학원서식'을
+ * 제외한 자료만 구독합니다.
+ *
+ * ⚠️ 왜 별도 함수로 분리했는가: Firestore 보안 규칙은 "필터"가 아니라
+ * "전부 허용 또는 전부 거부"로 동작합니다(공식 문서 표현). 즉 쿼리 결과가
+ * 될 수 있는 문서 중 단 하나라도 규칙을 통과하지 못하면, 그 문서만 빠지는
+ * 게 아니라 쿼리 전체가 permission-denied로 실패합니다.
+ *
+ * 예전에는 where 절 없이 materials 전체를 조회하면서, 규칙에서만
+ * `resource.data.materialType != '학원서식'` 조건으로 걸러내려고 했는데,
+ * 이 조건은 문서마다 값이 다른(resource.data 의존) 조건이라 쿼리 자체와
+ * 일치하지 않아, 컬렉션에 학원서식이 하나라도 있으면 승인된 수강생의
+ * 조회가 전부 거부되는 문제가 있었습니다(빈 화면으로 보일 수 있음).
+ *
+ * 지금은 업로드 시 저장해둔 `studentVisible` 필드를 쿼리의 where 절에
+ * 명시적으로 포함시켜서, "이 쿼리가 반환할 수 있는 모든 문서는
+ * studentVisible == true"라는 걸 Firestore가 정적으로 보장할 수 있게
+ * 했습니다. 규칙의 조건과 쿼리의 조건이 일치해야 통과된다는 Firestore의
+ * 요구사항을 충족시키는 방식입니다.
+ */
+export function subscribeVisibleMaterialsFromFirestore(
+  onUpdate: (materials: MaterialItem[]) => void
+): () => void {
+  const colRef = collection(db, "materials");
+  const qOrdered = query(colRef, where("studentVisible", "==", true), orderBy("createdAt", "desc"));
+  const qUnordered = query(colRef, where("studentVisible", "==", true));
+
+  return onSnapshot(
+    qOrdered,
+    (snapshot) => onUpdate(parseMaterialSnapshot(snapshot)),
+    (err: FirestoreError) => {
+      if (err.code === "failed-precondition") {
+        // studentVisible(등호) + createdAt(정렬) 복합 색인이 아직 생성/빌드
+        // 중일 때만 무정렬로 재시도합니다 (where 절은 그대로 유지해야
+        // 규칙을 계속 통과할 수 있으므로 반드시 남겨둡니다).
+        console.warn("자료실(수강생용) 정렬 인덱스가 아직 준비되지 않아 무정렬로 재조회합니다:", err);
+        onSnapshot(
+          qUnordered,
+          (snapshot) => {
+            const items = parseMaterialSnapshot(snapshot);
+            items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+            onUpdate(items);
+          },
+          (fallbackErr) => {
+            console.error("자료실(수강생용) 폴백 구독도 실패:", fallbackErr);
+            onUpdate([]);
+          }
+        );
+      } else {
+        console.error("자료실(수강생용) 구독 실패:", err);
         onUpdate([]);
       }
     }
@@ -827,6 +886,11 @@ export async function uploadMaterialToFirestore(
     description: meta.description ? meta.description.trim() : "",
     courseCategory: meta.courseCategory,
     materialType: meta.materialType,
+    // 수강생용 쿼리의 where 절과 짝을 이루는 필드입니다. Firestore 보안
+    // 규칙은 문서별로 값이 달라지는 조건(resource.data...)을 검증하려면
+    // 쿼리 자체에도 동일한 where 조건이 있어야 하므로, 이 필드 없이는
+    // '학원서식 제외' 조건을 규칙만으로 안전하게 걸 수 없습니다.
+    studentVisible: meta.materialType !== '학원서식',
     fileName: file.name,
     storagePath,
     fileSize: file.size,
@@ -844,6 +908,7 @@ export async function uploadMaterialToFirestore(
     description: docData.description,
     courseCategory: docData.courseCategory,
     materialType: docData.materialType,
+    studentVisible: docData.studentVisible,
     fileName: docData.fileName,
     storagePath: docData.storagePath,
     fileSize: docData.fileSize,
