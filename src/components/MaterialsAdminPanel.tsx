@@ -276,6 +276,7 @@ export const MaterialsAdminPanel: React.FC = () => {
                   </div>
                   <a
                     href={item.fileURL}
+                    download={item.fileName}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0"

@@ -67,10 +67,19 @@ export function onStudentAuthStateChanged(callback: (user: User | null) => void)
 /**
  * 현재 로그인된 계정의 students/{uid} 문서를 실시간 구독합니다.
  * 문서가 없으면(예: 관리자 계정으로 로그인한 경우) null을 전달합니다.
+ *
+ * ⚠️ 문서가 "존재하지 않는 것"과 "권한 오류 등으로 읽기 자체가 실패한 것"은
+ * 반드시 구분해야 합니다. 둘 다 null로 처리해버리면, Firestore 규칙이 아직
+ * 배포되지 않았거나 네트워크 문제가 있을 때 수강생 계정이 "프로필 없음 =
+ * 관리자 계정"으로 잘못 인식되어 승인 절차 없이 자료실을 통과해버리는
+ * 심각한 문제가 생깁니다(실패 시 오히려 문이 열리는 구조는 위험합니다).
+ * 그래서 읽기 실패 시에는 onError로 별도 통지하고, onUpdate(null)을
+ * 호출하지 않습니다.
  */
 export function subscribeStudentProfile(
   uid: string,
-  onUpdate: (profile: StudentProfile | null) => void
+  onUpdate: (profile: StudentProfile | null) => void,
+  onError?: (error: unknown) => void
 ): () => void {
   return onSnapshot(
     doc(db, "students", uid),
@@ -91,7 +100,9 @@ export function subscribeStudentProfile(
     },
     (err) => {
       console.error("수강생 프로필 구독 실패:", err);
-      onUpdate(null);
+      if (onError) {
+        onError(err);
+      }
     }
   );
 }

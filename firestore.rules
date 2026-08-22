@@ -92,8 +92,15 @@ service cloud.firestore {
     // 실제 파일은 Storage(materials/)에 있고, 여기에는 제목·설명·분류·파일경로
     // 같은 메타데이터만 저장합니다. 재원생(승인된 수강생) 또는 관리자만 조회
     // 가능하며, 쓰기(업로드 기록 생성/삭제)는 관리자만 가능합니다.
+    //
+    // ⚠️ '학원서식' 유형은 학원 내부용 서류 성격이라, 승인된 수강생이어도
+    // 볼 수 없고 관리자만 조회 가능하도록 별도로 막았습니다. Firestore는
+    // 쿼리(list) 결과에서도 문서 하나하나에 이 규칙을 적용해 걸러내므로,
+    // 수강생이 자료 목록을 구독해도 '학원서식' 문서는 애초에 목록에
+    // 포함되지 않습니다(따로 필터링할 필요 없이 서버 단에서 걸러집니다).
     match /materials/{materialId} {
-      allow read: if isAdmin() || isApprovedStudent();
+      allow read: if isAdmin()
+        || (isApprovedStudent() && resource.data.materialType != '학원서식');
       allow write: if isAdmin();
     }
 

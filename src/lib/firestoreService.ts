@@ -778,7 +778,19 @@ export async function uploadMaterialToFirestore(
   const storagePath = `materials/${meta.courseCategory}/${Date.now()}_${safeFileName}`;
   const storageRef = ref(storage, storagePath);
 
-  const uploadTask = uploadBytesResumable(storageRef, file);
+  // Content-Disposition을 'attachment'로 지정해, 이미지/PDF 파일을 링크로 열었을 때
+  // 브라우저가 새 탭에 "미리보기"로 띄우지 않고 곧바로 다운로드하도록 만듭니다.
+  // (단순히 <a download> 속성만 쓰면 Firebase Storage처럼 다른 도메인(cross-origin)의
+  // 파일에는 브라우저에 따라 무시될 수 있어서, 서버 응답 헤더 자체에 지정하는
+  // 이 방식이 훨씬 안정적입니다.) 한글 파일명도 깨지지 않도록 RFC 5987 형식의
+  // filename*=UTF-8''... 구문을 함께 넣어줍니다.
+  const asciiFallbackName = file.name.replace(/[^\x00-\x7F]/g, "_");
+  const contentDisposition =
+    `attachment; filename="${asciiFallbackName}"; filename*=UTF-8''${encodeURIComponent(file.name)}`;
+
+  const uploadTask = uploadBytesResumable(storageRef, file, {
+    contentDisposition,
+  });
 
   await new Promise<void>((resolve, reject) => {
     uploadTask.on(

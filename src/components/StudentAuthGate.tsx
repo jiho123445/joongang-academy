@@ -27,6 +27,7 @@ interface StudentAuthGateProps {
 export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) => {
   const [authUser, setAuthUser] = useState<User | null | undefined>(undefined); // undefined = 확인 중
   const [profile, setProfile] = useState<StudentProfile | null | undefined>(undefined);
+  const [profileLoadError, setProfileLoadError] = useState(false);
 
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [name, setName] = useState('');
@@ -50,11 +51,21 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
   useEffect(() => {
     if (!authUser) {
       setProfile(null);
+      setProfileLoadError(false);
       return;
     }
-    const unsub = subscribeStudentProfile(authUser.uid, (p) => {
-      setProfile(p);
-    });
+    setProfileLoadError(false);
+    const unsub = subscribeStudentProfile(
+      authUser.uid,
+      (p) => {
+        setProfile(p);
+      },
+      () => {
+        // 프로필 조회 자체가 실패한 경우: "문서 없음(=관리자)"으로 잘못
+        // 처리해 통과시키지 않고, 별도의 오류 상태로 남겨둡니다.
+        setProfileLoadError(true);
+      }
+    );
     return () => unsub();
   }, [authUser]);
 
@@ -218,6 +229,33 @@ export const StudentAuthGate: React.FC<StudentAuthGateProps> = ({ children }) =>
               </form>
             </>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // 프로필 조회 실패: 권한 없이 통과시키지 않고 오류 화면을 보여줍니다.
+  // (profile===undefined 체크보다 먼저 검사해야 합니다 - 오류가 나면 profile은
+  // 계속 undefined로 남기 때문에, 순서가 바뀌면 이 분기에 영영 도달하지 못합니다.)
+  if (profileLoadError) {
+    return (
+      <div className="max-w-md mx-auto px-4">
+        <div className="bg-white/70 backdrop-blur-xl rounded-3xl border border-white/80 shadow-xl p-8 text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+            <XCircle className="w-7 h-7" />
+          </div>
+          <h3 className="text-lg font-black text-slate-900">확인 중 오류가 발생했어요</h3>
+          <p className="text-sm text-slate-500">
+            계정 정보를 불러오지 못했어요. 잠시 후 새로고침해 주시거나, 계속되면 학원으로
+            문의해 주세요.
+          </p>
+          <button
+            onClick={() => logoutStudent()}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-700"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            로그아웃
+          </button>
         </div>
       </div>
     );
