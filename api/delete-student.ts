@@ -78,6 +78,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return;
     }
 
+    // 2-1. 삭제 대상이 관리자 계정이면 거부합니다. 지금 화면(UI)에는 관리자
+    // 삭제 버튼 자체가 없지만, 권한 검사는 화면이 아니라 요청을 실제로
+    // 처리하는 서버에서 매번 강제해야 합니다. 이 검사가 없으면, 관리자
+    // 계정이 탈취되거나 API가 직접 호출될 경우 다른 관리자(또는 자기 자신)
+    // 계정을 삭제해버릴 수 있습니다.
+    const targetAdminDoc = await adminDb.collection("admins").doc(uid).get();
+    if (targetAdminDoc.exists) {
+      res.status(403).json({ error: "관리자 계정은 이 기능으로 삭제할 수 없습니다." });
+      return;
+    }
+
     // 3. 대상 계정의 phoneRegistry 잠금도 함께 해제합니다. (그렇지 않으면
     //    계정은 삭제됐는데 전화번호 중복 방지 기록만 남아서, 같은 번호로
     //    재가입이 계속 막히는 문제가 생깁니다.)

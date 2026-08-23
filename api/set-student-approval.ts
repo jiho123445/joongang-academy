@@ -9,17 +9,16 @@ import { getFirestore } from "firebase-admin/firestore";
  * header: Authorization: Bearer <관리자 계정의 Firebase ID 토큰>
  *
  * 수강생의 Firestore 승인 상태를 바꾸는 동시에, Firebase Authentication의
- * Custom Claims에 approved: true/false를 심어줍니다.
+ * Custom Claims에도 approved: true/false를 심어줍니다.
  *
- * 왜 필요한가: Firestore 규칙은 "승인된 수강생만 자료 목록 조회 가능"으로
- * 잘 막아뒀지만, 실제 파일이 저장된 Storage 쪽은 예전에 "로그인만 하면 접근
- * 가능"이라는 더 느슨한 규칙을 쓰고 있었습니다(Storage 규칙에서 Firestore를
- * 조회하는 cross-service 방식은 별도의 콘솔 승인 절차가 필요하고, 그 절차를
- * 놓치면 조용히 전부 막혀버리는 문제를 이전에 겪었기 때문입니다).
- *
- * Custom Claims는 로그인 토큰 자체에 "승인됨" 여부를 담아두는 방식이라,
- * Storage 규칙에서 Firestore를 다시 조회할 필요 없이 바로 확인할 수 있어
- * 이 문제를 근본적으로 해결합니다.
+ * ⚠️ 현재 이 Custom Claims는 어디에서도 실제로 읽지 않습니다(2026-08
+ * 기준). Storage 접근 제어는 지금은 이메일 기반 관리자 확인 +
+ * `api/download-material.ts`의 서버 측 Firestore 조회 방식으로 처리하고
+ * 있어서, 이 클레임은 남겨진 이전 설계의 흔적입니다. 실제 승인 여부의
+ * 기준(source of truth)은 어디까지나 Firestore의 `students.status`
+ * 필드이며, 이 클레임 값이 실제 상태와 다르더라도 승인/차단 동작에는
+ * 영향이 없습니다. 나중에 Storage 규칙에서 다시 활용할 계획이 없다면
+ * 이 setCustomUserClaims 호출은 안전하게 제거해도 됩니다.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
