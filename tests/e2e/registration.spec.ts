@@ -7,7 +7,7 @@ test.describe('수강문의 입력 검증', () => {
     await closeOpeningPopupIfVisible(page);
 
     await page.locator('#nav-inquiry').click();
-    await expect(page).toHaveURL(/#inquiry$/);
+    await expect(page).toHaveURL(/\/inquiry$/);
 
     const form = page.locator('#inquiry form').first();
     await expect(form).toBeVisible();

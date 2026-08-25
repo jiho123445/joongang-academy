@@ -25,7 +25,7 @@ test.describe('모바일 기본 동작', () => {
     await expect(courseButton).toBeVisible();
     await courseButton.click();
 
-    await expect(page).toHaveURL(/#courses$/);
+    await expect(page).toHaveURL(/\/courses$/);
     await expect(
       page.getByRole('heading', { name: '전체 교육과정', exact: true })
     ).toBeVisible();
