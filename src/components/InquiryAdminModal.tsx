@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { InquiryRecord, Notice } from '../types';
+import { InquiryRecord, Notice, Course } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import { MaterialsAdminPanel } from './MaterialsAdminPanel';
 import { StudentApprovalPanel } from './StudentApprovalPanel';
@@ -23,6 +23,10 @@ import {
   addPopularCourseToFirestore,
   updatePopularCourseInFirestore,
   deletePopularCourseFromFirestore,
+  subscribeCoursesFromFirestore,
+  addCourseToFirestore,
+  updateCourseInFirestore,
+  deleteCourseFromFirestore,
   DEFAULT_OPENING_POPUP,
   formatReceiptNumber,
 } from '../lib/firestoreService';
@@ -105,8 +109,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [changePwSuccess, setChangePwSuccess] = useState<string>('');
   const [changePwLoading, setChangePwLoading] = useState<boolean>(false);
 
-  // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses'
-  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'materials' | 'students' | 'accounts'>('inquiries');
+  // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'courses'
+  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'courses' | 'materials' | 'students' | 'accounts'>('inquiries');
 
   // Board Notices (공지사항 & 자격시험 일정) State
   const [boardNotices, setBoardNotices] = useState<Notice[]>([]);
@@ -130,6 +134,26 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [popFormStartDate, setPopFormStartDate] = useState<string>('2026-09-01 개강');
   const [popFormDescription, setPopFormDescription] = useState<string>('');
   const [popSuccessMsg, setPopSuccessMsg] = useState<string>('');
+
+  // 교육과정 페이지(전체 강좌 카드) 관리 State
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [isCourseFormOpen, setIsCourseFormOpen] = useState<boolean>(false);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [courseFormTitle, setCourseFormTitle] = useState<string>('');
+  const [courseFormCategory, setCourseFormCategory] = useState<Course['category']>('자격증');
+  const [courseFormSummary, setCourseFormSummary] = useState<string>('');
+  const [courseFormDescription, setCourseFormDescription] = useState<string>('');
+  const [courseFormTarget, setCourseFormTarget] = useState<string>('');
+  const [courseFormDuration, setCourseFormDuration] = useState<string>('');
+  const [courseFormSchedule, setCourseFormSchedule] = useState<string>('');
+  const [courseFormNationalSupport, setCourseFormNationalSupport] = useState<boolean>(true);
+  const [courseFormSubsidyRate, setCourseFormSubsidyRate] = useState<string>('');
+  const [courseFormTuition, setCourseFormTuition] = useState<string>('');
+  const [courseFormSelfPayEstimate, setCourseFormSelfPayEstimate] = useState<string>('카드 유형별 상이');
+  const [courseFormCertTags, setCourseFormCertTags] = useState<string>('');
+  const [courseFormCurriculum, setCourseFormCurriculum] = useState<string>('');
+  const [courseFormFeatured, setCourseFormFeatured] = useState<boolean>(false);
+  const [courseSuccessMsg, setCourseSuccessMsg] = useState<string>('');
 
   // Edit memo inline state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -249,11 +273,16 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       setPopularCourses(data);
     });
 
+    const unsubCourses = subscribeCoursesFromFirestore((data) => {
+      setCourses(data);
+    });
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       unsubPopup();
       unsubNotices();
       unsubPopular();
+      unsubCourses();
     };
   }, [isOpen, onClose]);
 
@@ -543,6 +572,109 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
           window.dispatchEvent(new Event('popular_courses_updated'));
           setPopSuccessMsg('인기 강좌가 Firestore DB에서 삭제되었습니다.');
           setTimeout(() => setPopSuccessMsg(''), 4000);
+        } catch (err) {
+          console.error('Failed to delete course item:', err);
+          alert('삭제 중 오류가 발생했습니다.');
+        }
+      }
+    );
+  };
+
+  const courseCategoryOptions: Course['category'][] = ['국비지원', '자격증', '실무·기초', '코딩·AI', '학생·특강'];
+
+  const handleOpenCreateCourseForm = () => {
+    setEditingCourse(null);
+    setCourseFormTitle('');
+    setCourseFormCategory('자격증');
+    setCourseFormSummary('');
+    setCourseFormDescription('');
+    setCourseFormTarget('');
+    setCourseFormDuration('');
+    setCourseFormSchedule('');
+    setCourseFormNationalSupport(true);
+    setCourseFormSubsidyRate('');
+    setCourseFormTuition('');
+    setCourseFormSelfPayEstimate('카드 유형별 상이');
+    setCourseFormCertTags('');
+    setCourseFormCurriculum('');
+    setCourseFormFeatured(false);
+    setIsCourseFormOpen(true);
+  };
+
+  const handleOpenEditCourseForm = (item: Course) => {
+    setEditingCourse(item);
+    setCourseFormTitle(item.title);
+    setCourseFormCategory(item.category);
+    setCourseFormSummary(item.summary);
+    setCourseFormDescription(item.description);
+    setCourseFormTarget(item.target);
+    setCourseFormDuration(item.duration);
+    setCourseFormSchedule(item.schedule);
+    setCourseFormNationalSupport(item.nationalSupport);
+    setCourseFormSubsidyRate(item.subsidyRate);
+    setCourseFormTuition(item.tuition ? String(item.tuition) : '');
+    setCourseFormSelfPayEstimate(item.selfPayEstimate || '카드 유형별 상이');
+    setCourseFormCertTags((item.certificationTags || []).join(', '));
+    setCourseFormCurriculum((item.curriculum || []).join('\n'));
+    setCourseFormFeatured(Boolean(item.featured));
+    setIsCourseFormOpen(true);
+  };
+
+  const handleSaveCourseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!courseFormTitle.trim()) {
+      alert('강좌명을 입력해 주세요.');
+      return;
+    }
+
+    const payload = {
+      title: courseFormTitle.trim(),
+      category: courseFormCategory,
+      summary: courseFormSummary.trim(),
+      description: courseFormDescription.trim(),
+      target: courseFormTarget.trim(),
+      duration: courseFormDuration.trim(),
+      schedule: courseFormSchedule.trim(),
+      nationalSupport: courseFormNationalSupport,
+      subsidyRate: courseFormSubsidyRate.trim(),
+      tuition: courseFormTuition ? Number(courseFormTuition) || 0 : 0,
+      selfPayEstimate: courseFormSelfPayEstimate.trim() || '카드 유형별 상이',
+      certificationTags: courseFormCertTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+      curriculum: courseFormCurriculum
+        .split('\n')
+        .map((t) => t.trim())
+        .filter(Boolean),
+      featured: courseFormFeatured,
+    };
+
+    try {
+      if (editingCourse) {
+        await updateCourseInFirestore(editingCourse.id, payload);
+      } else {
+        await addCourseToFirestore(payload);
+      }
+
+      setIsCourseFormOpen(false);
+      setCourseSuccessMsg(editingCourse ? '교육과정이 Firestore DB에 수정되었습니다.' : '새 교육과정이 Firestore DB에 등록되었습니다.');
+      setTimeout(() => setCourseSuccessMsg(''), 4000);
+    } catch (err) {
+      console.error('Course save failed:', err);
+      alert('저장 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleDeleteCourseItem = (id: string, title: string) => {
+    requestConfirm(
+      '교육과정 삭제 확인',
+      `[${title}]\n\n이 교육과정을 정말 삭제하시겠습니까?\n삭제하면 교육과정 페이지 카드 목록에서 즉시 사라집니다.`,
+      async () => {
+        try {
+          await deleteCourseFromFirestore(id);
+          setCourseSuccessMsg('교육과정이 Firestore DB에서 삭제되었습니다.');
+          setTimeout(() => setCourseSuccessMsg(''), 4000);
         } catch (err) {
           console.error('Failed to delete course item:', err);
           alert('삭제 중 오류가 발생했습니다.');
@@ -1457,6 +1589,19 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
               <button
                 type="button"
+                onClick={() => setActiveTab('courses')}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+                  activeTab === 'courses'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>교육과정 관리 ({courses.length}건)</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab('materials')}
                 className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
                   activeTab === 'materials'
@@ -1495,7 +1640,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               </button>
             </div>
 
-            {activeTab !== 'materials' && activeTab !== 'students' && activeTab !== 'accounts' && (
+            {activeTab !== 'materials' && activeTab !== 'students' && activeTab !== 'accounts' && activeTab !== 'courses' && (
               <button
                 onClick={handleExportToExcel}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
@@ -2421,6 +2566,314 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               )}
             </div>
           </div>
+        ) : activeTab === 'courses' ? (
+          /* 교육과정 페이지(전체 강좌 카드) 관리 Tab */
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50 space-y-5">
+            {courseSuccessMsg && (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-bold flex items-center justify-between shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span>{courseSuccessMsg}</span>
+                </div>
+                <span className="text-xs text-emerald-600 font-bold bg-emerald-100 px-2.5 py-1 rounded-full">
+                  실시간 반영 완료
+                </span>
+              </div>
+            )}
+
+            {/* Header & Create Button */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-indigo-600" />
+                  <span>교육과정 관리</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  홈페이지 "전체 교육과정" 페이지에 노출되는 강좌 카드(제목, 설명, 대상, 기간/시간대, 자격증 태그, 커리큘럼 등)를 등록·수정·삭제합니다.
+                </p>
+              </div>
+
+              {!isCourseFormOpen && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreateCourseForm}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>새 교육과정 등록</span>
+                </button>
+              )}
+            </div>
+
+            {/* Add / Edit Form Box */}
+            {isCourseFormOpen && (
+              <form onSubmit={handleSaveCourseSubmit} className="bg-white p-6 rounded-3xl border border-indigo-200 shadow-md space-y-4 animate-fadeIn">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <Edit3 className="w-4 h-4 text-indigo-600" />
+                    <span>{editingCourse ? '교육과정 수정' : '새 교육과정 등록'}</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsCourseFormOpen(false)}
+                    className="p-1 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="md:col-span-8">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                      강좌명 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={courseFormTitle}
+                      onChange={(e) => setCourseFormTitle(e.target.value)}
+                      placeholder="예: 컴퓨터활용능력 2급/1급 취득반"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                      required
+                    />
+                  </div>
+
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">카테고리</label>
+                    <select
+                      value={courseFormCategory}
+                      onChange={(e) => setCourseFormCategory(e.target.value as Course['category'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    >
+                      {courseCategoryOptions.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-12">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">한줄 요약 (카드에 표시)</label>
+                    <input
+                      type="text"
+                      value={courseFormSummary}
+                      onChange={(e) => setCourseFormSummary(e.target.value)}
+                      placeholder="예: 사무직 필수 자격증! 엑셀 및 액세스 실무 실습과 필기/실기 기출 집중 분석"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-12">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">상세 설명 (커리큘럼 모달 상단)</label>
+                    <textarea
+                      rows={3}
+                      value={courseFormDescription}
+                      onChange={(e) => setCourseFormDescription(e.target.value)}
+                      placeholder="과정에 대한 상세 소개를 적어주세요."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">수강 대상</label>
+                    <input
+                      type="text"
+                      value={courseFormTarget}
+                      onChange={(e) => setCourseFormTarget(e.target.value)}
+                      placeholder="예: 취업준비생, 공무원 준비생, 대학생, 직장인"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">기간/시간 총량</label>
+                    <input
+                      type="text"
+                      value={courseFormDuration}
+                      onChange={(e) => setCourseFormDuration(e.target.value)}
+                      placeholder="예: 1개월 ~ 2개월 (총 40~60시간)"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-12">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">시간대</label>
+                    <input
+                      type="text"
+                      value={courseFormSchedule}
+                      onChange={(e) => setCourseFormSchedule(e.target.value)}
+                      placeholder="예: 오전반(10:00~12:00) / 오후반(14:00~16:00) / 야간반(19:00~21:00)"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">지원율 / 배지 문구</label>
+                    <input
+                      type="text"
+                      value={courseFormSubsidyRate}
+                      onChange={(e) => setCourseFormSubsidyRate(e.target.value)}
+                      placeholder="예: 최대 100% 국비지원"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">예상 자부담금 문구</label>
+                    <input
+                      type="text"
+                      value={courseFormSelfPayEstimate}
+                      onChange={(e) => setCourseFormSelfPayEstimate(e.target.value)}
+                      placeholder="예: 카드 유형별 상이"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">일반 수강료 (원, 참고용)</label>
+                    <input
+                      type="number"
+                      value={courseFormTuition}
+                      onChange={(e) => setCourseFormTuition(e.target.value)}
+                      placeholder="예: 320000"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-6 flex items-end gap-4">
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={courseFormNationalSupport}
+                        onChange={(e) => setCourseFormNationalSupport(e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                      />
+                      <span className="text-xs font-bold text-slate-700">국비지원 가능 과정</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={courseFormFeatured}
+                        onChange={(e) => setCourseFormFeatured(e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                      />
+                      <span className="text-xs font-bold text-slate-700">"추천강좌" 뱃지 표시</span>
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-12">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">관련 자격증 태그 (쉼표로 구분)</label>
+                    <input
+                      type="text"
+                      value={courseFormCertTags}
+                      onChange={(e) => setCourseFormCertTags(e.target.value)}
+                      placeholder="예: 컴퓨터활용능력 1급, 컴퓨터활용능력 2급"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="md:col-span-12">
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">커리큘럼 (한 줄에 한 항목씩)</label>
+                    <textarea
+                      rows={5}
+                      value={courseFormCurriculum}
+                      onChange={(e) => setCourseFormCurriculum(e.target.value)}
+                      placeholder={'1주차: ...\n2주차: ...\n3주차: ...'}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 leading-relaxed"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsCourseFormOpen(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl cursor-pointer"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{editingCourse ? '수정 내용 저장' : '교육과정 등록하기'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* List of Courses */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 bg-slate-100/80 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-600">
+                <span>현재 노출 중인 교육과정 ({courses.length}개)</span>
+              </div>
+
+              {courses.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 text-xs font-medium">
+                  등록된 교육과정을 불러오는 중이거나 없습니다. [새 교육과정 등록] 버튼을 눌러 등록해 보세요.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {courses.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-4 sm:p-5 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="space-y-1.5 max-w-2xl">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border bg-blue-100 text-blue-800 border-blue-200">
+                            {item.category}
+                          </span>
+                          {item.nationalSupport && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border bg-emerald-100 text-emerald-800 border-emerald-200">
+                              {item.subsidyRate || '국비지원'}
+                            </span>
+                          )}
+                          {item.featured && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border bg-amber-100 text-amber-800 border-amber-200">
+                              추천강좌
+                            </span>
+                          )}
+                        </div>
+
+                        <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                          {item.title}
+                        </h4>
+
+                        {item.summary && (
+                          <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                            {item.summary}
+                          </p>
+                        )}
+
+                        <p className="text-[11px] text-slate-400 font-mono">
+                          {item.duration}{item.schedule ? ` · ${item.schedule}` : ''}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditCourseForm(item)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold text-xs border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>수정</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCourseItem(item.id, item.title)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-700 font-bold text-xs border border-slate-200 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>삭제</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         ) : activeTab === 'materials' ? (
           <MaterialsAdminPanel />
         ) : activeTab === 'students' ? (
@@ -2764,7 +3217,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
             <span>상담 신청 데이터는 서버에 안전하게 관리·보관됩니다.</span>
           </p>
           <div className="flex items-center gap-3">
-            {isAuthenticated && activeTab !== 'materials' && activeTab !== 'students' && activeTab !== 'accounts' && (
+            {isAuthenticated && activeTab !== 'materials' && activeTab !== 'students' && activeTab !== 'accounts' && activeTab !== 'courses' && (
               <button
                 onClick={handleExportToExcel}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow cursor-pointer"

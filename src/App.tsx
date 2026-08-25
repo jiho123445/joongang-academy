@@ -106,13 +106,14 @@ export default function App() {
       }
 
       const todayStr = new Date().toISOString().slice(0, 10);
-      const isKakaoOrExternal =
-        window.location.search.includes('kakao') ||
-        window.location.search.includes('utm_') ||
-        navigator.userAgent.toLowerCase().includes('kakaotalk') ||
-        window.location.hash.includes('notice');
 
-      if (cfg.enabled && (isKakaoOrExternal || hiddenDate !== todayStr)) {
+      // "오늘 하루 동안 보지 않기"를 누른 경우, 카카오톡/외부 유입 등
+      // 어떤 경로로 들어와도 오늘 하루는 절대 다시 뜨지 않아야 합니다.
+      // (예전에는 카카오톡 인앱 브라우저나 '#notices' 공지 페이지로 들어오면
+      // hiddenDate와 무관하게 무조건 다시 열려서, 하루 안 보기를 눌러도
+      // 팝업이 계속 다시 떴습니다.)
+      const hiddenToday = hiddenDate === todayStr;
+      if (cfg.enabled && !hiddenToday) {
         setIsNoticePopupOpen(true);
       }
     });

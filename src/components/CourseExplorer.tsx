@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Course } from '../types';
 import { COURSES_DATA } from '../data/coursesData';
+import { subscribeCoursesFromFirestore } from '../lib/firestoreService';
 import { Search, Award, Clock, Users, Calendar, CheckCircle2, ChevronRight, Info, Sparkles, Filter } from 'lucide-react';
 
 interface CourseExplorerProps {
@@ -17,10 +18,20 @@ export const CourseExplorer: React.FC<CourseExplorerProps> = ({
   onSelectCourseForInquiry,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [courses, setCourses] = useState<Course[]>(COURSES_DATA);
+
+  useEffect(() => {
+    const unsubscribe = subscribeCoursesFromFirestore((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setCourses(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const categories = ['전체', '국비지원', '자격증', '실무·기초', '코딩·AI', '학생·특강'];
 
-  const filteredCourses = COURSES_DATA.filter((course) => {
+  const filteredCourses = courses.filter((course) => {
     const matchesCategory =
       selectedCategory === '전체' || course.category === selectedCategory;
     const matchesSearch =

@@ -43,6 +43,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // 2. 개강 팝업 등 사이트 설정('settings')
     // 누구나 읽기 가능, 관리자만 쓰기 가능
     match /settings/{settingId} {

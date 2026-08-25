@@ -18,9 +18,10 @@ import {
   FirestoreError,
 } from "firebase/firestore";
 import { db, auth, storage } from "./firebase";
-import { InquiryRecord, Notice, MaterialItem } from "../types";
+import { InquiryRecord, Notice, MaterialItem, Course } from "../types";
 import { ScheduleItem, PopupNoticeConfig } from "../components/NoticePopupModal";
 import { PopularCourseAdminItem } from "../components/InquiryAdminModal";
+import { COURSES_DATA } from "../data/coursesData";
 
 // Error Logger Helper
 function handleFirestoreError(error: unknown, actionName: string) {
@@ -720,6 +721,157 @@ export async function deletePopularCourseFromFirestore(id: string): Promise<void
     await deleteDoc(doc(db, "popular_courses", id));
   } catch (err) {
     handleFirestoreError(err, "deletePopularCourseFromFirestore");
+  }
+}
+
+// =========================================================================
+// 5. 교육과정 컬렉션 (`courses`) - 교육과정 페이지(전체/카테고리별 강좌 카드) 관리
+// =========================================================================
+
+// coursesData.ts에 있던 하드코딩 8개 과정을 그대로 초기 시드 데이터로 사용합니다.
+export const DEFAULT_COURSES: Course[] = COURSES_DATA;
+
+export function subscribeCoursesFromFirestore(
+  onUpdate: (courses: Course[]) => void
+): () => void {
+  const colRef = collection(db, "courses");
+
+  const parseDocs = (snapshot: any) => {
+    if (snapshot.empty) {
+      // notices/popular_courses와 동일하게, 관리자 로그인 세션일 때만 초기 시딩을 시도합니다.
+      if (auth.currentUser) {
+        seedDefaultCourses().catch(console.error);
+      }
+      return DEFAULT_COURSES;
+    }
+    const items = snapshot.docs.map((d: any, idx: number) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        title: data.title || "",
+        category: data.category || "자격증",
+        summary: data.summary || "",
+        description: data.description || "",
+        target: data.target || "",
+        duration: data.duration || "",
+        schedule: data.schedule || "",
+        nationalSupport: Boolean(data.nationalSupport),
+        subsidyRate: data.subsidyRate || "",
+        tuition: typeof data.tuition === "number" ? data.tuition : 0,
+        selfPayEstimate: data.selfPayEstimate || "카드 유형별 상이",
+        certificationTags: Array.isArray(data.certificationTags) ? data.certificationTags : [],
+        curriculum: Array.isArray(data.curriculum) ? data.curriculum : [],
+        featured: Boolean(data.featured),
+        order: typeof data.order === "number" ? data.order : idx,
+      } as Course & { order: number };
+    });
+    items.sort((a: any, b: any) => a.order - b.order);
+    return items;
+  };
+
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      onUpdate(parseDocs(snapshot));
+    },
+    (err) => {
+      console.error("subscribeCoursesFromFirestore error:", err);
+      onUpdate(DEFAULT_COURSES);
+    }
+  );
+}
+
+async function seedDefaultCourses() {
+  // 고정 문서 ID를 사용해 동시 시딩으로 인한 중복 생성을 방지합니다.
+  const colRef = collection(db, "courses");
+  for (let idx = 0; idx < DEFAULT_COURSES.length; idx++) {
+    const c = DEFAULT_COURSES[idx];
+    const seedId = `seed-${idx + 1}`;
+    await setDoc(doc(colRef, seedId), {
+      title: c.title,
+      category: c.category,
+      summary: c.summary,
+      description: c.description,
+      target: c.target,
+      duration: c.duration,
+      schedule: c.schedule,
+      nationalSupport: c.nationalSupport,
+      subsidyRate: c.subsidyRate,
+      tuition: c.tuition,
+      selfPayEstimate: c.selfPayEstimate,
+      certificationTags: c.certificationTags,
+      curriculum: c.curriculum,
+      featured: Boolean(c.featured),
+      order: idx,
+      updatedAt: serverTimestamp(),
+    });
+  }
+}
+
+export type CourseInput = Omit<Course, "id">;
+
+export async function addCourseToFirestore(data: CourseInput & { order?: number }): Promise<void> {
+  try {
+    const colRef = collection(db, "courses");
+    await addDoc(colRef, {
+      title: data.title.trim(),
+      category: data.category,
+      summary: data.summary ? data.summary.trim() : "",
+      description: data.description ? data.description.trim() : "",
+      target: data.target || "",
+      duration: data.duration || "",
+      schedule: data.schedule || "",
+      nationalSupport: Boolean(data.nationalSupport),
+      subsidyRate: data.subsidyRate || "",
+      tuition: typeof data.tuition === "number" ? data.tuition : 0,
+      selfPayEstimate: data.selfPayEstimate || "카드 유형별 상이",
+      certificationTags: Array.isArray(data.certificationTags) ? data.certificationTags : [],
+      curriculum: Array.isArray(data.curriculum) ? data.curriculum : [],
+      featured: Boolean(data.featured),
+      order: typeof data.order === "number" ? data.order : Date.now(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, "addCourseToFirestore");
+  }
+}
+
+export async function updateCourseInFirestore(
+  id: string,
+  data: Partial<CourseInput> & { order?: number }
+): Promise<void> {
+  try {
+    const docRef = doc(db, "courses", id);
+    const updatePayload: Record<string, any> = {
+      updatedAt: serverTimestamp(),
+    };
+    if (data.title !== undefined) updatePayload.title = data.title;
+    if (data.category !== undefined) updatePayload.category = data.category;
+    if (data.summary !== undefined) updatePayload.summary = data.summary;
+    if (data.description !== undefined) updatePayload.description = data.description;
+    if (data.target !== undefined) updatePayload.target = data.target;
+    if (data.duration !== undefined) updatePayload.duration = data.duration;
+    if (data.schedule !== undefined) updatePayload.schedule = data.schedule;
+    if (data.nationalSupport !== undefined) updatePayload.nationalSupport = data.nationalSupport;
+    if (data.subsidyRate !== undefined) updatePayload.subsidyRate = data.subsidyRate;
+    if (data.tuition !== undefined) updatePayload.tuition = data.tuition;
+    if (data.selfPayEstimate !== undefined) updatePayload.selfPayEstimate = data.selfPayEstimate;
+    if (data.certificationTags !== undefined) updatePayload.certificationTags = data.certificationTags;
+    if (data.curriculum !== undefined) updatePayload.curriculum = data.curriculum;
+    if (data.featured !== undefined) updatePayload.featured = data.featured;
+    if (data.order !== undefined) updatePayload.order = data.order;
+
+    await updateDoc(docRef, updatePayload);
+  } catch (err) {
+    handleFirestoreError(err, "updateCourseInFirestore");
+  }
+}
+
+export async function deleteCourseFromFirestore(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "courses", id));
+  } catch (err) {
+    handleFirestoreError(err, "deleteCourseFromFirestore");
   }
 }
 

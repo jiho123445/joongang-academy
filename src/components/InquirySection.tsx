@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ConsultationForm } from '../types';
+import { ConsultationForm, Course } from '../types';
 import { COURSES_DATA, ACADEMY_INFO } from '../data/coursesData';
 import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, Sparkles, FileSpreadsheet, RotateCcw } from 'lucide-react';
-import { submitApplicationToFirestore, formatReceiptNumber } from '../lib/firestoreService';
+import { submitApplicationToFirestore, formatReceiptNumber, subscribeCoursesFromFirestore } from '../lib/firestoreService';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 interface InquirySectionProps {
@@ -12,6 +12,17 @@ interface InquirySectionProps {
 }
 
 export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCourse, onOpenAdminModal, pendingInquiryCount = 0 }) => {
+  const [courses, setCourses] = useState<Course[]>(COURSES_DATA);
+
+  useEffect(() => {
+    const unsubscribe = subscribeCoursesFromFirestore((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setCourses(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const getInitialForm = (courseOverride?: string): ConsultationForm => ({
     name: '',
     phone: '',
@@ -291,7 +302,7 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
                   onChange={(e) => setFormData({ ...formData, courseInterest: e.target.value })}
                   className="w-full p-3.5 rounded-2xl bg-white/80 backdrop-blur-sm border border-slate-200/80 text-xs sm:text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none shadow-sm"
                 >
-                  {COURSES_DATA.map((c) => (
+                  {courses.map((c) => (
                     <option key={c.id} value={c.title}>
                       [{c.category}] {c.title}
                     </option>
