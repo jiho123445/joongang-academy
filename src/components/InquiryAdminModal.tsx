@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { InquiryRecord, Notice, Course } from '../types';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import { MaterialsAdminPanel } from './MaterialsAdminPanel';
@@ -28,6 +28,7 @@ import {
   updateCourseInFirestore,
   deleteCourseFromFirestore,
   ensureCoursesSeeded,
+  reseedMissingDefaultCourses,
   subscribeErrorLogsFromFirestore,
   deleteErrorLog,
   clearAllErrorLogs,
@@ -101,10 +102,41 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   // Firebase Authentication 기반 관리자 로그인 상태
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
-  const [loginEmail, setLoginEmail] = useState<string>('');
+  // 마지막으로 로그인에 성공한 이메일은 브라우저에 기억해뒀다가 다음 로그인 때
+  // 자동으로 채워줍니다. 매번 이메일을 새로 입력할 필요 없이 비밀번호만
+  // 입력하면 되도록 하기 위함입니다. (이 브라우저를 여러 사람이 같이 쓰는
+  // 공용 PC라면, 로그아웃 시 "이메일 기억 지우기"를 눌러 지울 수 있습니다.)
+  const REMEMBERED_ADMIN_EMAIL_KEY = 'admin_last_login_email';
+  const [loginEmail, setLoginEmail] = useState<string>(() => {
+    try {
+      return localStorage.getItem(REMEMBERED_ADMIN_EMAIL_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
+  // 이메일이 이미 기억되어 채워진 채로 시작했는지(최초 1회만 판단) — 그렇다면
+  // 이메일 입력칸 대신 비밀번호 입력칸에 바로 포커스를 줍니다.
+  const emailWasPrefilledRef = useRef<boolean>(loginEmail.length > 0);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen && !isAuthenticated && emailWasPrefilledRef.current) {
+      passwordInputRef.current?.focus();
+    }
+  }, [isOpen, isAuthenticated]);
+
+  const handleForgetRememberedEmail = () => {
+    setLoginEmail('');
+    emailWasPrefilledRef.current = false;
+    try {
+      localStorage.removeItem(REMEMBERED_ADMIN_EMAIL_KEY);
+    } catch {
+      // ignore
+    }
+  };
 
   // 비밀번호 변경 모달 상태
   const [isChangePwOpen, setIsChangePwOpen] = useState<boolean>(false);
@@ -344,6 +376,14 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     setLoginLoading(true);
     try {
       await loginAdmin(loginEmail.trim(), loginPassword);
+      // 로그인에 성공했으니 이 이메일을 기억해서, 다음에 열었을 때
+      // 이메일 입력 없이 비밀번호만 넣으면 되도록 합니다.
+      try {
+        localStorage.setItem(REMEMBERED_ADMIN_EMAIL_KEY, loginEmail.trim());
+      } catch {
+        // localStorage를 쓸 수 없는 환경(시크릿 모드 등)이어도 로그인 자체는
+        // 정상 진행되도록 조용히 무시합니다.
+      }
       // onAdminAuthStateChanged 리스너가 isAuthenticated를 true로 갱신해 줍니다.
       setLoginPassword('');
     } catch (err) {
@@ -613,6 +653,31 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   };
 
   const courseCategoryOptions: Course['category'][] = ['국비지원', '자격증', '실무·기초', '코딩·AI', '학생·특강'];
+  const [isRestoringDefaults, setIsRestoringDefaults] = useState<boolean>(false);
+
+  const handleRestoreDefaultCourses = () => {
+    requestConfirm(
+      '기본 교육과정 복구 확인',
+      '원래 제공되던 기본 교육과정 중 아직 등록되지 않은 항목만 채워 넣습니다.\n이미 등록된 강좌는 전혀 건드리지 않습니다. 계속하시겠습니까?',
+      async () => {
+        setIsRestoringDefaults(true);
+        try {
+          const added = await reseedMissingDefaultCourses();
+          setCourseSuccessMsg(
+            added > 0
+              ? `기본 교육과정 ${added}개를 새로 채워 넣었습니다.`
+              : '이미 기본 교육과정이 전부 등록되어 있어, 추가된 항목이 없습니다.'
+          );
+          setTimeout(() => setCourseSuccessMsg(''), 5000);
+        } catch (err) {
+          console.error('Failed to restore default courses:', err);
+          alert('복구 중 오류가 발생했습니다.');
+        } finally {
+          setIsRestoringDefaults(false);
+        }
+      }
+    );
+  };
 
   const handleOpenCreateCourseForm = () => {
     setEditingCourse(null);
@@ -1772,10 +1837,11 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                       ? 'border-red-500 ring-2 ring-red-200 text-red-600'
                       : 'border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900'
                   }`}
-                  autoFocus
+                  autoFocus={!emailWasPrefilledRef.current}
                 />
                 <input
                   type="password"
+                  ref={passwordInputRef}
                   value={loginPassword}
                   onChange={(e) => {
                     setLoginPassword(e.target.value);
@@ -1789,6 +1855,15 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                       : 'border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900'
                   }`}
                 />
+                {emailWasPrefilledRef.current && (
+                  <button
+                    type="button"
+                    onClick={handleForgetRememberedEmail}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 font-bold underline underline-offset-2 cursor-pointer"
+                  >
+                    다른 계정으로 로그인 (기억된 이메일 지우기)
+                  </button>
+                )}
                 {loginError && (
                   <p className="text-xs text-red-600 font-bold mt-2 flex items-center justify-center gap-1">
                     <AlertCircle className="w-3.5 h-3.5" />
@@ -2671,14 +2746,26 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               </div>
 
               {!isCourseFormOpen && (
-                <button
-                  type="button"
-                  onClick={handleOpenCreateCourseForm}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>새 교육과정 등록</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleRestoreDefaultCourses}
+                    disabled={isRestoringDefaults}
+                    className="px-4 py-2.5 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-black text-xs sm:text-sm rounded-2xl shadow-sm border border-slate-200 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                    title="원래 제공되던 기본 교육과정 중 아직 등록되지 않은 항목만 채워 넣습니다 (이미 있는 강좌는 건드리지 않음)"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isRestoringDefaults ? 'animate-spin' : ''}`} />
+                    <span>기본 과정 복구</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenCreateCourseForm}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>새 교육과정 등록</span>
+                  </button>
+                </div>
               )}
             </div>
 

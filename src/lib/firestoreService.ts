@@ -837,6 +837,45 @@ export async function ensureCoursesSeeded(): Promise<void> {
   }
 }
 
+// Firestore 권한 문제 등으로 최초 자동 시딩이 실패했던 경우를 위한 복구용
+// 함수입니다. ensureCoursesSeeded()는 컬렉션이 "완전히 비어있을 때만" 8개를
+// 채워 넣는데, 이미 관리자가 직접 등록한 강좌가 하나라도 있으면(=empty가
+// 아니면) 그 뒤로는 절대 자동으로 채우지 않습니다. 이 함수는 그와 달리
+// 기본 강좌 8개(seed-1~seed-8) 각각을, 그 id의 문서가 아직 없을 때만
+// 개별적으로 추가합니다 — 이미 있는 강좌(관리자가 직접 등록했거나, 이미
+// 시딩된 것)는 절대 덮어쓰거나 건드리지 않고, 빠진 것만 채워 넣습니다.
+export async function reseedMissingDefaultCourses(): Promise<number> {
+  const colRef = collection(db, "courses");
+  let addedCount = 0;
+  for (let idx = 0; idx < DEFAULT_COURSES.length; idx++) {
+    const c = DEFAULT_COURSES[idx];
+    const seedId = `seed-${idx + 1}`;
+    const docRef = doc(colRef, seedId);
+    const existing = await getDoc(docRef);
+    if (existing.exists()) continue;
+    await setDoc(docRef, {
+      title: c.title,
+      category: c.category,
+      summary: c.summary,
+      description: c.description,
+      target: c.target,
+      duration: c.duration,
+      schedule: c.schedule,
+      nationalSupport: c.nationalSupport,
+      subsidyRate: c.subsidyRate,
+      tuition: c.tuition,
+      selfPayEstimate: c.selfPayEstimate,
+      certificationTags: c.certificationTags,
+      curriculum: c.curriculum,
+      featured: Boolean(c.featured),
+      order: idx,
+      updatedAt: serverTimestamp(),
+    });
+    addedCount += 1;
+  }
+  return addedCount;
+}
+
 export type CourseInput = Omit<Course, "id">;
 
 export async function addCourseToFirestore(data: CourseInput & { order?: number }): Promise<void> {
