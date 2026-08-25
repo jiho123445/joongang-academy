@@ -233,12 +233,17 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     title: string;
     message: string;
     confirmText?: string;
+    // 'danger'(빨간 버튼) — 삭제 등 되돌리기 어려운 작업. 'primary'(파란/보라
+    // 버튼) — 복구·저장처럼 안전한 작업. 기본값은 기존 호출부(전부 삭제
+    // 확인)와의 호환을 위해 'danger'로 둡니다.
+    tone?: 'danger' | 'primary';
     onConfirm: () => void;
   }>({
     isOpen: false,
     title: '',
     message: '',
     confirmText: '삭제하기',
+    tone: 'danger',
     onConfirm: () => {},
   });
 
@@ -246,13 +251,15 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     title: string,
     message: string,
     onConfirm: () => void,
-    confirmText = '삭제하기'
+    confirmText = '삭제하기',
+    tone: 'danger' | 'primary' = 'danger'
   ) => {
     setConfirmDialog({
       isOpen: true,
       title,
       message,
       confirmText,
+      tone,
       onConfirm,
     });
   };
@@ -675,7 +682,9 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
         } finally {
           setIsRestoringDefaults(false);
         }
-      }
+      },
+      '복구하기',
+      'primary'
     );
   };
 
@@ -3519,7 +3528,11 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                     setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
                     action();
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-colors cursor-pointer"
+                  className={`px-4 py-2.5 rounded-xl text-white text-xs font-bold shadow-md transition-colors cursor-pointer ${
+                    confirmDialog.tone === 'primary'
+                      ? 'bg-indigo-600 hover:bg-indigo-700'
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
                 >
                   {confirmDialog.confirmText || '삭제하기'}
                 </button>
