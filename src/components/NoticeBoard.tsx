@@ -4,13 +4,26 @@ import { Bell, Calendar, ChevronRight, X, AlertCircle } from 'lucide-react';
 import { subscribeNoticesFromFirestore } from '../lib/firestoreService';
 import { useModalA11y } from '../lib/useModalA11y';
 
-export const NoticeBoard: React.FC = () => {
+interface NoticeBoardProps {
+  // 부모(App.tsx)가 URL(/notices/:id)과 동기화해서 관리하는 현재 열람 중인
+  // 공지 id. 이렇게 해야 개별 공지에 실제 URL이 생겨서 카카오톡/문자 공유나
+  // 구글·네이버 검색 노출이 가능해집니다(예전엔 팝업일 뿐 주소가 안 바뀌었음).
+  selectedNoticeId?: string | null;
+  onOpenNotice?: (noticeId: string) => void;
+  onCloseDetail?: () => void;
+}
+
+export const NoticeBoard: React.FC<NoticeBoardProps> = ({ selectedNoticeId, onOpenNotice, onCloseDetail }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
-  const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const detailModalRef = useModalA11y(!!selectedNotice, () => setSelectedNotice(null));
+  const selectedNotice = selectedNoticeId ? notices.find((n) => n.id === selectedNoticeId) || null : null;
+  const closeDetail = () => {
+    if (onCloseDetail) onCloseDetail();
+  };
+
+  const detailModalRef = useModalA11y(!!selectedNotice, closeDetail);
 
   useEffect(() => {
     const unsubscribe = subscribeNoticesFromFirestore((data) => {
@@ -85,7 +98,7 @@ export const NoticeBoard: React.FC = () => {
             filteredNotices.map((notice) => (
             <div
               key={notice.id}
-              onClick={() => setSelectedNotice(notice)}
+              onClick={() => onOpenNotice && onOpenNotice(notice.id)}
               className="p-5 sm:p-6 hover:bg-white/60 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
             >
               <div className="flex items-start sm:items-center gap-3">
@@ -130,7 +143,7 @@ export const NoticeBoard: React.FC = () => {
         {selectedNotice && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-fadeIn"
-            onClick={() => setSelectedNotice(null)}
+            onClick={() => closeDetail()}
           >
             <div
               ref={detailModalRef}
@@ -152,7 +165,7 @@ export const NoticeBoard: React.FC = () => {
                   <p className="text-xs text-slate-500 mt-1">등록일: {selectedNotice.date}</p>
                 </div>
                 <button
-                  onClick={() => setSelectedNotice(null)}
+                  onClick={() => closeDetail()}
                   className="p-2 text-slate-400 hover:text-slate-800 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -165,7 +178,7 @@ export const NoticeBoard: React.FC = () => {
 
               <div className="flex justify-end">
                 <button
-                  onClick={() => setSelectedNotice(null)}
+                  onClick={() => closeDetail()}
                   className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-full shadow-md shadow-blue-200 transition-all cursor-pointer"
                 >
                   확인

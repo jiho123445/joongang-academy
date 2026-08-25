@@ -532,7 +532,10 @@ export async function updateNoticeInFirestore(
     if (data.important !== undefined) updatePayload.important = data.important;
     if (data.attachedFiles !== undefined) updatePayload.attachedFiles = data.attachedFiles;
 
-    await updateDoc(docRef, updatePayload);
+    // updateDoc 대신 setDoc(merge:true) — 같은 이유로(문서가 아직
+    // Firestore에 없을 수 있는 시딩 타이밍 이슈) courses와 동일하게 안전한
+    // upsert 방식으로 통일합니다.
+    await setDoc(docRef, updatePayload, { merge: true });
   } catch (err) {
     handleFirestoreError(err, "updateNoticeInFirestore");
   }
@@ -710,7 +713,8 @@ export async function updatePopularCourseInFirestore(
     if (data.isPopular !== undefined) updatePayload.isPopular = data.isPopular;
     if (data.order !== undefined) updatePayload.order = data.order;
 
-    await updateDoc(docRef, updatePayload);
+    // 동일한 시딩 타이밍 이슈에 대비해 upsert 방식(setDoc+merge)으로 통일.
+    await setDoc(docRef, updatePayload, { merge: true });
   } catch (err) {
     handleFirestoreError(err, "updatePopularCourseInFirestore");
   }
@@ -739,6 +743,12 @@ export function subscribeCoursesFromFirestore(
   const parseDocs = (snapshot: any) => {
     if (snapshot.empty) {
       // notices/popular_courses와 동일하게, 관리자 로그인 세션일 때만 초기 시딩을 시도합니다.
+      // 주의: Firebase Auth는 페이지 로드 시 세션 복원이 비동기라서, 이 최초
+      // onSnapshot 콜백이 실행되는 시점엔 실제로 로그인돼 있어도
+      // auth.currentUser가 아직 null일 수 있습니다. 그래서 여기 조건만
+      // 믿으면 시딩이 누락될 수 있어, ensureCoursesSeeded()를 관리자
+      // 로그인 확인 시점(InquiryAdminModal)에서 별도로 한 번 더 확정적으로
+      // 호출합니다 — 이게 실제 시딩을 보장하는 주 경로입니다.
       if (auth.currentUser) {
         seedDefaultCourses().catch(console.error);
       }
@@ -808,6 +818,25 @@ async function seedDefaultCourses() {
   }
 }
 
+// 관리자 로그인이 "확실히" 확인된 시점(예: InquiryAdminModal의 관리자
+// 인증 체크 완료 시점)에서 명시적으로 호출해 courses 컬렉션이 비어있으면
+// 시드 데이터를 채워 넣습니다. subscribeCoursesFromFirestore 내부의
+// auth.currentUser 체크는 타이밍에 따라 누락될 수 있어(위 주석 참고),
+// 이 함수가 실제로 시딩을 보장하는 확정적인 경로입니다. 이미 문서가
+// 있으면 아무 것도 하지 않습니다(setDoc은 같은 seedId로 여러 번
+// 호출돼도 안전 — 덮어쓸 뿐 중복 생성되지 않습니다).
+export async function ensureCoursesSeeded(): Promise<void> {
+  try {
+    const colRef = collection(db, "courses");
+    const snapshot = await getDocs(colRef);
+    if (snapshot.empty) {
+      await seedDefaultCourses();
+    }
+  } catch (err) {
+    console.error("ensureCoursesSeeded failed:", err);
+  }
+}
+
 export type CourseInput = Omit<Course, "id">;
 
 export async function addCourseToFirestore(data: CourseInput & { order?: number }): Promise<void> {
@@ -861,7 +890,14 @@ export async function updateCourseInFirestore(
     if (data.featured !== undefined) updatePayload.featured = data.featured;
     if (data.order !== undefined) updatePayload.order = data.order;
 
-    await updateDoc(docRef, updatePayload);
+    // updateDoc 대신 setDoc(merge:true)를 씁니다. updateDoc은 문서가 아직
+    // 존재하지 않으면 "No document to update" 에러를 던지는데, 시딩
+    // 타이밍이 어긋나 목록에 아직 Firestore에 실제로 없는 기본값(예:
+    // course-1)이 표시된 상태에서 "수정"을 누르면 바로 이 에러가
+    // 발생했습니다("저장 중 오류가 발생했습니다"). setDoc+merge는 문서가
+    // 없으면 그 id로 새로 만들고, 있으면 병합 수정하므로 이 경우에도
+    // 항상 저장이 성공합니다.
+    await setDoc(docRef, updatePayload, { merge: true });
   } catch (err) {
     handleFirestoreError(err, "updateCourseInFirestore");
   }
@@ -872,6 +908,99 @@ export async function deleteCourseFromFirestore(id: string): Promise<void> {
     await deleteDoc(doc(db, "courses", id));
   } catch (err) {
     handleFirestoreError(err, "deleteCourseFromFirestore");
+  }
+}
+
+// =========================================================================
+// ERROR LOGS COLLECTION (`errorLogs`) - 방문자 브라우저 런타임 오류 자동 수집
+// =========================================================================
+// 재단 홈페이지(nbnhappy.or.kr)와 동일한 패턴입니다. 예전에는 방문자 화면에서
+// 오류가 나도 console.error만 찍고 끝이라, 원장님은 실제로 어떤 문제가
+// 발생했는지 전혀 알 방법이 없었습니다. 이제 ErrorBoundary와 전역
+// window.onerror에서 잡힌 오류를 Firestore에 저장하고, 관리자 모드에서
+// 확인할 수 있습니다.
+
+export interface ErrorLogItem {
+  id: string;
+  message: string;
+  stack?: string;
+  url: string;
+  userAgent?: string;
+  context?: string;
+  createdAt: string;
+}
+
+export async function reportClientError(data: {
+  message: string;
+  stack?: string;
+  url: string;
+  userAgent?: string;
+  context?: string;
+}): Promise<void> {
+  try {
+    const colRef = collection(db, "errorLogs");
+    await addDoc(colRef, {
+      message: (data.message || "알 수 없는 오류").slice(0, 2000),
+      stack: data.stack ? data.stack.slice(0, 4000) : undefined,
+      url: (data.url || "").slice(0, 500),
+      userAgent: data.userAgent ? data.userAgent.slice(0, 500) : undefined,
+      context: data.context ? data.context.slice(0, 200) : undefined,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    // 오류 리포팅 자체가 실패해도 방문자 화면에 영향을 주면 안 되므로,
+    // 조용히 콘솔에만 남기고 절대 throw하지 않습니다.
+    console.warn("reportClientError failed:", err);
+  }
+}
+
+export function subscribeErrorLogsFromFirestore(
+  onUpdate: (logs: ErrorLogItem[]) => void
+): () => void {
+  const colRef = collection(db, "errorLogs");
+  const q = query(colRef, orderBy("createdAt", "desc"));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          message: data.message || "",
+          stack: data.stack || "",
+          url: data.url || "",
+          userAgent: data.userAgent || "",
+          context: data.context || "",
+          createdAt: data.createdAt || "",
+        } as ErrorLogItem;
+      });
+      onUpdate(items);
+    },
+    (err) => {
+      console.error("subscribeErrorLogsFromFirestore error:", err);
+      onUpdate([]);
+    }
+  );
+}
+
+export async function deleteErrorLog(id: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, "errorLogs", id));
+  } catch (err) {
+    handleFirestoreError(err, "deleteErrorLog");
+  }
+}
+
+export async function clearAllErrorLogs(ids: string[]): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    ids.forEach((id) => {
+      batch.delete(doc(db, "errorLogs", id));
+    });
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, "clearAllErrorLogs");
   }
 }
 

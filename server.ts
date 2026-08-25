@@ -17,6 +17,15 @@ async function startServer() {
     res.json({ status: "ok", academy: "홍천 중앙정보처리학원" });
   });
 
+  // 동적 sitemap (프로덕션에서는 Vercel이 api/sitemap.ts로 라우팅합니다.
+  // 로컬 개발 중에도 동일하게 테스트할 수 있도록 여기서도 같은 핸들러를 씁니다.)
+  app.get("/sitemap.xml", async (req, res) => {
+    const { default: sitemapHandler } = await import("./api/sitemap");
+    // @ts-ignore - Express Request/Response는 VercelRequest/VercelResponse와
+    // 이 핸들러가 실제로 쓰는 메서드(status/setHeader/send) 형태가 호환됩니다.
+    await sitemapHandler(req as any, res as any);
+  });
+
   // AI Course Advice Endpoint using Gemini
   // (프로덕션/Vercel에서는 api/ask-ai.ts 서버리스 함수가 같은 로직을
   //  api/_shared/aiConsultant.ts에서 공유해서 사용합니다.)

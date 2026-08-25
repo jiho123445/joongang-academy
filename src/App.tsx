@@ -41,6 +41,8 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<string>('home');
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
   const [selectedCourseForModal, setSelectedCourseForModal] = useState<Course | null>(null);
+  const [initialCourseIdFromUrl, setInitialCourseIdFromUrl] = useState<string | null>(null);
+  const [selectedNoticeId, setSelectedNoticeId] = useState<string | null>(null);
   const [preselectedCourseForInquiry, setPreselectedCourseForInquiry] = useState<string>('');
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
@@ -144,36 +146,141 @@ export default function App() {
     setIsNoticePopupOpen(false);
   };
 
-  // Sync state with URL hash for true multi-page navigation experience
+  // Sync state with URL path for true multi-page navigation experience (해시 없는 실제 경로)
+  // 예전에는 window.location.hash를 썼는데, 구글/네이버 검색 노출과 SEO에는
+  // #이 붙지 않는 경로 기반 URL(/courses, /notices 등)이 훨씬 유리합니다.
+  // 재단 홈페이지(nbnhappy.or.kr)와 동일한 방식: 공지·강좌 하나하나(/notices/:id,
+  // /courses/:id)까지 실제 URL을 갖도록 확장하고, 예전 #해시 링크도 자동으로
+  // 새 경로로 옮겨줍니다.
+  const VALID_SECTIONS = ['courses', 'national-support', 'intro', 'notices', 'inquiry', 'location', 'materials', 'home'];
+
+  const buildPath = (section: string, itemId?: string | null): string => {
+    const normalized = section === 'hero' ? 'home' : section;
+    if ((normalized === 'notices' || normalized === 'courses') && itemId) {
+      return `/${normalized}/${encodeURIComponent(itemId)}`;
+    }
+    return normalized === 'home' ? '/' : `/${normalized}`;
+  };
+
+  const parsePathToState = (pathname: string): { section: string; noticeId: string | null; courseId: string | null } => {
+    const raw = pathname.replace(/^\/+/, '').replace(/\/+$/, '').trim();
+    if (!raw) return { section: 'home', noticeId: null, courseId: null };
+
+    const noticeMatch = raw.match(/^notices\/([^/]+)$/);
+    if (noticeMatch) {
+      return { section: 'notices', noticeId: decodeURIComponent(noticeMatch[1]), courseId: null };
+    }
+    const courseMatch = raw.match(/^courses\/([^/]+)$/);
+    if (courseMatch) {
+      return { section: 'courses', noticeId: null, courseId: decodeURIComponent(courseMatch[1]) };
+    }
+
+    return { section: VALID_SECTIONS.includes(raw) ? raw : 'home', noticeId: null, courseId: null };
+  };
+
+  // 예전에 카카오톡/문자/검색엔진에 이미 공유·색인된 #courses, #notices 같은
+  // 구식 해시 링크가 있으면, 페이지가 처음 열릴 때 자동으로 새 경로(/courses,
+  // /notices)로 바꿔줍니다(replaceState라 뒤로가기 히스토리를 늘리지 않음).
+  // 이렇게 하지 않으면 예전 링크를 통해 들어온 방문자는 전부 그냥 홈으로
+  // 떨어지게 됩니다. 마운트 시 한 번만 실행됩니다.
+  const legacyHashMigratedRef = React.useRef(false);
+  if (!legacyHashMigratedRef.current && typeof window !== 'undefined' && window.location.hash) {
+    legacyHashMigratedRef.current = true;
+    const legacyRaw = window.location.hash.replace(/^#/, '').trim();
+    const legacySection = legacyRaw === 'hero' ? 'home' : legacyRaw;
+    const migratedPath = VALID_SECTIONS.includes(legacySection) ? buildPath(legacySection) : null;
+    if (migratedPath) {
+      window.history.replaceState(null, '', migratedPath);
+    } else {
+      // 알 수 없는 해시는 그냥 지워서 주소창에 남지 않게 합니다.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }
+
   useEffect(() => {
-    const parseHash = () => {
-      const raw = window.location.hash.replace('#', '').trim();
-      if (
-        raw &&
-        ['courses', 'national-support', 'intro', 'notices', 'inquiry', 'location', 'materials', 'home'].includes(raw)
-      ) {
-        setActiveSection(raw);
-      } else if (raw === 'hero') {
-        setActiveSection('home');
+    const parsePath = () => {
+      const { section, noticeId, courseId } = parsePathToState(window.location.pathname);
+      setActiveSection(section);
+      setSelectedNoticeId(noticeId);
+      setInitialCourseIdFromUrl(courseId);
+      if (!courseId) {
+        setSelectedCourseForModal(null);
       }
     };
 
-    parseHash();
-    window.addEventListener('hashchange', parseHash);
-    return () => window.removeEventListener('hashchange', parseHash);
+    parsePath();
+    // 뒤로가기/앞으로가기(브라우저 히스토리 이동) 시에도 동일하게 반영
+    window.addEventListener('popstate', parsePath);
+    return () => window.removeEventListener('popstate', parsePath);
   }, []);
 
   const handleNavigate = (pageId: string) => {
     const targetPage = pageId === 'hero' ? 'home' : pageId;
     setActiveSection(targetPage);
-    window.location.hash = targetPage;
+    setSelectedNoticeId(null);
+    setInitialCourseIdFromUrl(null);
+    setSelectedCourseForModal(null);
+    const targetPath = buildPath(targetPage);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    trackPageView(targetPage);
+    // GA4에는 실제로 바뀐 주소(targetPath)를 그대로 보냅니다 — 예전엔
+    // 여기서 항상 "/#섹션명" 형태로 고정해서 보내는 바람에, 라우팅을
+    // #해시에서 경로 기반으로 바꾼 뒤에도 애널리틱스 리포트에는 계속
+    // 옛날 #주소로 기록되는 불일치가 있었습니다.
+    trackPageView(targetPath, targetPage);
 
     // Open opening notice popup modal when Home button/logo is clicked
     if (pageId === 'home' || pageId === 'hero') {
       setIsNoticePopupOpen(true);
     }
+  };
+
+  // 공지사항 하나를 열람할 때 실제 URL(/notices/:id)을 부여합니다.
+  // 이렇게 해야 카카오톡/문자로 공유하거나 구글·네이버 검색 결과에
+  // 개별 공지가 노출될 수 있습니다(예전에는 팝업일 뿐 URL이 안 바뀌어서
+  // 항상 /notices 목록 주소만 공유/색인됐습니다).
+  const handleViewNotice = (noticeId: string) => {
+    setActiveSection('notices');
+    setSelectedNoticeId(noticeId);
+    const targetPath = buildPath('notices', noticeId);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    trackPageView(targetPath, `공지사항 상세 (${noticeId})`);
+  };
+
+  const handleCloseNoticeDetail = () => {
+    setSelectedNoticeId(null);
+    const targetPath = buildPath('notices');
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    trackPageView(targetPath, 'notices');
+  };
+
+  // 강좌 하나를 열람할 때도 공지사항과 동일하게 실제 URL(/courses/:id)을
+  // 부여합니다. CourseExplorer 카드를 클릭했을 때(onOpenDetailModal)와
+  // /courses/:id로 직접 딥링크로 들어왔을 때(CourseExplorer의
+  // initialCourseId 해석 완료 시) 모두 이 함수를 거칩니다.
+  const handleOpenCourseDetail = (course: Course) => {
+    setSelectedCourseForModal(course);
+    const targetPath = buildPath('courses', course.id);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    trackPageView(targetPath, `강좌 상세 (${course.title})`);
+  };
+
+  const handleCloseCourseDetail = () => {
+    setSelectedCourseForModal(null);
+    setInitialCourseIdFromUrl(null);
+    const targetPath = buildPath('courses');
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    trackPageView(targetPath, 'courses');
   };
 
   const handleSelectCourseForInquiry = (courseTitle: string) => {
@@ -229,8 +336,10 @@ export default function App() {
             <CourseExplorer
               selectedCategory={selectedCategory}
               onSelectCategory={(cat) => setSelectedCategory(cat)}
-              onOpenDetailModal={(course) => setSelectedCourseForModal(course)}
+              onOpenDetailModal={handleOpenCourseDetail}
               onSelectCourseForInquiry={handleSelectCourseForInquiry}
+              initialCourseId={initialCourseIdFromUrl}
+              onInitialCourseResolved={() => setInitialCourseIdFromUrl(null)}
             />
             {/* Page Bottom Navigation Shortcut */}
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -321,7 +430,11 @@ export default function App() {
               categoryName="공지 및 FAQ"
               onNavigateHome={() => handleNavigate('home')}
             />
-            <NoticeBoard />
+            <NoticeBoard
+              selectedNoticeId={selectedNoticeId}
+              onOpenNotice={handleViewNotice}
+              onCloseDetail={handleCloseNoticeDetail}
+            />
             <div className="pt-8">
               <FaqSection />
             </div>
@@ -397,10 +510,10 @@ export default function App() {
       {/* Course Detail Modal */}
       <CourseDetailModal
         course={selectedCourseForModal}
-        onClose={() => setSelectedCourseForModal(null)}
+        onClose={handleCloseCourseDetail}
         onApply={(courseTitle) => {
           handleSelectCourseForInquiry(courseTitle);
-          setSelectedCourseForModal(null);
+          handleCloseCourseDetail();
         }}
       />
 
