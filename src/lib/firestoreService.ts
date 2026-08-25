@@ -313,6 +313,7 @@ export const DEFAULT_OPENING_POPUP: PopupNoticeConfig = {
     { courseName: "정보처리기능사 / GTQ 포토샵 자격증", startDate: "10월 01일 개강", timeSlot: "오후 15:30 / 야간 19:00" },
   ],
   actionText: "지금 온라인 수강신청하기",
+  buttonLabel: "",
 };
 
 export function subscribeOpeningPopupFromFirestore(
@@ -334,6 +335,7 @@ export function subscribeOpeningPopupFromFirestore(
           dateText: data.scheduleSummary || data.dateText || DEFAULT_OPENING_POPUP.dateText,
           schedules: Array.isArray(data.schedules) ? data.schedules : DEFAULT_OPENING_POPUP.schedules,
           actionText: data.actionText || DEFAULT_OPENING_POPUP.actionText,
+          buttonLabel: data.buttonLabel || "",
         };
         onUpdate(config);
       } else {
@@ -365,6 +367,7 @@ export async function saveOpeningPopupToFirestore(config: PopupNoticeConfig): Pr
       dateText: config.dateText || "",
       schedules: Array.isArray(config.schedules) ? config.schedules : [],
       actionText: config.actionText || "지금 온라인 수강신청하기",
+      buttonLabel: config.buttonLabel || "",
       updatedAt: serverTimestamp(),
     };
     await setDoc(docRef, payload, { merge: true });

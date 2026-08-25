@@ -17,6 +17,10 @@ export interface PopupNoticeConfig {
   dateText: string;
   schedules?: ScheduleItem[];
   actionText: string;
+  /** 우측 하단 "공지 다시보기" 플로팅 버튼에 표시되는 짧은 문구.
+   *  비워두면(=falsy) 상단 뱃지 문구(badgeText)를 그대로 사용해
+   *  팝업 뱃지 문구가 바뀌면 플로팅 버튼 문구도 함께 바뀐다. */
+  buttonLabel?: string;
   updatedAt?: string;
 }
 

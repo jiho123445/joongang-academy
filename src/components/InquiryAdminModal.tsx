@@ -156,6 +156,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     dateText: '개강일: 2026년 8월 ~ 9월 수시 개강 (오전/오후/야간반 운영)',
     schedules: defaultSchedules,
     actionText: '지금 온라인 수강신청하기',
+    buttonLabel: '',
   });
   const [savingNotice, setSavingNotice] = useState<boolean>(false);
   const [noticeSuccessMsg, setNoticeSuccessMsg] = useState<string>('');
@@ -1832,6 +1833,22 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-700 mb-1">
+                    7. 우측 하단 플로팅 버튼 문구 (선택)
+                  </label>
+                  <input
+                    type="text"
+                    value={noticeConfig.buttonLabel || ''}
+                    onChange={(e) => setNoticeConfig({ ...noticeConfig, buttonLabel: e.target.value })}
+                    placeholder={`비워두면 "1. 상단 뱃지 문구"와 자동으로 동일하게 표시됩니다`}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    팝업을 닫았을 때 화면 우측 하단에 뜨는 재오픈 버튼의 문구입니다. 비워두면 위 1번 뱃지 문구를 그대로 따라갑니다.
+                  </p>
+                </div>
+
                 <div className="pt-2">
                   <button
                     type="submit"
@@ -1915,6 +1932,23 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                     <span>오늘 하루 동안 보지 않기</span>
                     <span>닫기</span>
                   </div>
+                </div>
+
+                {/* Floating "재오픈" button preview — syncs with badgeText unless buttonLabel is set */}
+                <div className="pt-1">
+                  <p className="text-[10px] font-bold text-slate-400 mb-1.5 flex items-center gap-1">
+                    <Eye className="w-3 h-3" />
+                    <span>팝업을 닫으면 우측 하단에 뜨는 재오픈 버튼</span>
+                  </p>
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black text-xs rounded-full shadow border-2 border-white">
+                    <Megaphone className="w-3.5 h-3.5 text-slate-950 fill-slate-950" />
+                    <span>{noticeConfig.buttonLabel || noticeConfig.badgeText || '공지사항'}</span>
+                  </span>
+                  {!noticeConfig.buttonLabel && (
+                    <span className="block text-[10px] text-slate-500 mt-1">
+                      * 1번 뱃지 문구와 자동 연동 중입니다
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

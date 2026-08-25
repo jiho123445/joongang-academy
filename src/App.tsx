@@ -451,7 +451,7 @@ export default function App() {
             <span className="relative inline-flex rounded-full h-3 w-3 bg-slate-950"></span>
           </span>
           <Megaphone className="w-4 h-4 text-slate-950 fill-slate-950" />
-          <span>8~9월 개강공지</span>
+          <span>{noticeConfig.buttonLabel || noticeConfig.badgeText}</span>
         </button>
       )}
 
