@@ -661,6 +661,17 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
   const courseCategoryOptions: Course['category'][] = ['국비지원', '자격증', '실무·기초', '코딩·AI', '학생·특강'];
   const [isRestoringDefaults, setIsRestoringDefaults] = useState<boolean>(false);
+  // 교육과정 목록이 스크롤 영역 안에 있어서, 목록 아래쪽에서 "수정"을 누르면
+  // 편집 폼이 목록 위쪽에 나타나도 화면에 보이지 않는 문제가 있었습니다
+  // (실제로는 편집 모드로 정상 진입했지만, 스크롤이 안 따라가서 마치
+  // "아무 반응이 없다"처럼 보였습니다). 폼이 열릴 때마다 그 위치로 자동
+  // 스크롤해서 바로 보이도록 합니다.
+  const courseFormRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (isCourseFormOpen) {
+      courseFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [isCourseFormOpen]);
 
   const handleRestoreDefaultCourses = () => {
     requestConfirm(
@@ -2780,7 +2791,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
             {/* Add / Edit Form Box */}
             {isCourseFormOpen && (
-              <form onSubmit={handleSaveCourseSubmit} className="bg-white p-6 rounded-3xl border border-indigo-200 shadow-md space-y-4 animate-fadeIn">
+              <form ref={courseFormRef} onSubmit={handleSaveCourseSubmit} className="bg-white p-6 rounded-3xl border border-indigo-200 shadow-md space-y-4 animate-fadeIn">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
                     <Edit3 className="w-4 h-4 text-indigo-600" />
