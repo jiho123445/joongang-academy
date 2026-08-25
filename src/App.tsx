@@ -28,6 +28,7 @@ import { onAdminAuthStateChanged } from './lib/adminAuth';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { trackPageView } from './lib/analytics';
+import { updatePageMeta } from './lib/seo';
 
 // InquiryAdminModal은 엑셀 내보내기 라이브러리(exceljs)를 포함해 코드량이 커서
 // (수강생 등 일반 방문자는 절대 열지 않는 화면인데도) 즉시 로드하면 모든 방문자가
@@ -213,6 +214,62 @@ export default function App() {
     window.addEventListener('popstate', parsePath);
     return () => window.removeEventListener('popstate', parsePath);
   }, []);
+
+  // 섹션(페이지)별 <title>/description — PageHeader에 실제로 표시되는
+  // 문구와 동일하게 맞춰서, 브라우저 탭 제목과 검색엔진에 보이는 제목이
+  // 화면 내용과 일치하도록 합니다.
+  const SECTION_META: Record<string, { title: string; description: string }> = {
+    home: {
+      title: '국비지원 컴퓨터·IT 교육',
+      description: '1999년 설립, 27년 전통의 홍천 대표 IT·컴퓨터 교육기관. 국민내일배움카드 국비지원, 컴퓨터활용능력, 전산세무회계, 시니어 컴퓨터, 파이썬&AI 맞춤형 교육을 제공합니다.',
+    },
+    courses: {
+      title: '전체 교육과정',
+      description: '컴퓨터활용능력, 전산세무회계, 시니어/어르신 기초, 파이썬&AI 등 1:1 맞춤형 실습 교육과정을 안내합니다.',
+    },
+    'national-support': {
+      title: '국민내일배움카드 국비지원 안내',
+      description: '고용노동부 지원 혜택, 신청 자격 요건, 발급 절차 및 HRD-Net 가이드를 안내합니다.',
+    },
+    intro: {
+      title: '학원 소개 & 원장 인사말',
+      description: '1999년 설립 이래 홍천 지역 사회와 함께해온 IT·컴퓨터 전문 교육기관, 홍천 중앙정보처리학원을 소개합니다.',
+    },
+    notices: {
+      title: '공지사항 & 자격증 시험일정',
+      description: '모집 일정, 검정 시험 일정 안내 및 자주 묻는 질문(FAQ)을 안내합니다.',
+    },
+    inquiry: {
+      title: '온라인 수강 문의',
+      description: '1분 간편 문의 작성 또는 전화 상담 신청을 받아보세요.',
+    },
+    location: {
+      title: '오시는 길 & 위치 안내',
+      description: '강원도 홍천군 홍천읍 신장대로 48, 2층 (홍천여고 인근 중앙약국 맞은편)에 위치해 있습니다.',
+    },
+    materials: {
+      title: '자료실',
+      description: '서식, 과정별 예제 파일, 채점프로그램을 다운로드하실 수 있습니다.',
+    },
+  };
+
+  useEffect(() => {
+    // 강좌 상세가 열려 있으면 그 강좌 이름/요약으로 더 구체적인 제목을 씁니다.
+    if (selectedCourseForModal) {
+      updatePageMeta({
+        title: selectedCourseForModal.title,
+        description: selectedCourseForModal.summary || selectedCourseForModal.description || SECTION_META.courses.description,
+        path: `/courses/${selectedCourseForModal.id}`,
+      });
+      return;
+    }
+
+    const meta = SECTION_META[activeSection] || SECTION_META.home;
+    const path = activeSection === 'home' ? '/' : `/${activeSection}`;
+    updatePageMeta({ title: meta.title, description: meta.description, path });
+    // selectedNoticeId가 있을 때(공지 상세)는 NoticeBoard가 공지 내용을
+    // 불러온 뒤 이 기본값을 더 구체적인 제목으로 다시 덮어씁니다.
+  }, [activeSection, selectedCourseForModal]);
 
   const handleNavigate = (pageId: string) => {
     const targetPage = pageId === 'hero' ? 'home' : pageId;

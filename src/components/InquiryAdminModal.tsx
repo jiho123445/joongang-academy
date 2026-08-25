@@ -433,8 +433,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     setChangePwError('');
     setChangePwSuccess('');
 
-    if (newPwInput.length < 6) {
-      setChangePwError('새 비밀번호는 6자 이상이어야 합니다.');
+    if (newPwInput.length < 12) {
+      setChangePwError('새 비밀번호는 보안을 위해 12자 이상으로 설정해 주세요.');
       return;
     }
     if (newPwInput !== newPwConfirmInput) {
@@ -3735,7 +3735,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                   type="password"
                   value={newPwInput}
                   onChange={(e) => { setNewPwInput(e.target.value); setChangePwError(''); }}
-                  placeholder="새 비밀번호 (6자 이상)"
+                  placeholder="새 비밀번호 (12자 이상)"
                   autoComplete="new-password"
                   className="w-full px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900"
                   required
