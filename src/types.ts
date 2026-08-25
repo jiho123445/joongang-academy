@@ -9,7 +9,7 @@ export interface Course {
   schedule: string; // 시간대 (예: 월~금 10:00 - 12:00 / 야간반 19:00 - 21:00)
   nationalSupport: boolean; // 국비지원 가능 여부
   subsidyRate: string; // 지원율 (예: 최대 100% 지원)
-  tuition: number; // 일반 수강료 (원)
+  tuition: string; // 일반 수강료 (원, 참고용) — 숫자뿐 아니라 "협의" "국비 100% 지원시 무료" 같은 문구도 입력 가능
   selfPayEstimate: string; // 예상 자부담금 (예: 0원 ~ 50,000원)
   certificationTags: string[]; // 관련 자격증
   curriculum: string[]; // 주차별/단계별 교육내용

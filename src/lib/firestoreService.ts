@@ -767,7 +767,7 @@ export function subscribeCoursesFromFirestore(
         schedule: data.schedule || "",
         nationalSupport: Boolean(data.nationalSupport),
         subsidyRate: data.subsidyRate || "",
-        tuition: typeof data.tuition === "number" ? data.tuition : 0,
+        tuition: typeof data.tuition === "string" ? data.tuition : (typeof data.tuition === "number" ? String(data.tuition) : ""),
         selfPayEstimate: data.selfPayEstimate || "카드 유형별 상이",
         certificationTags: Array.isArray(data.certificationTags) ? data.certificationTags : [],
         curriculum: Array.isArray(data.curriculum) ? data.curriculum : [],
@@ -891,7 +891,7 @@ export async function addCourseToFirestore(data: CourseInput & { order?: number 
       schedule: data.schedule || "",
       nationalSupport: Boolean(data.nationalSupport),
       subsidyRate: data.subsidyRate || "",
-      tuition: typeof data.tuition === "number" ? data.tuition : 0,
+      tuition: typeof data.tuition === "string" ? data.tuition : (typeof data.tuition === "number" ? String(data.tuition) : ""),
       selfPayEstimate: data.selfPayEstimate || "카드 유형별 상이",
       certificationTags: Array.isArray(data.certificationTags) ? data.certificationTags : [],
       curriculum: Array.isArray(data.curriculum) ? data.curriculum : [],
@@ -1297,6 +1297,41 @@ export async function uploadMaterialToFirestore(
  * 승인되지 않은 계정은 애초에 링크 자체를 받을 수 없습니다. 다운로드
  * 횟수 집계도 이 안에서 서버가 함께 처리합니다.
  */
+/**
+ * 자료실 항목의 메타데이터(제목/설명/과정 분류/자료 유형)를 수정합니다.
+ * 실제 파일(Storage)은 건드리지 않고 Firestore 문서만 바꾸는 것이라
+ * 파일을 다시 올릴 필요가 없습니다 — 예를 들어 "학원서식"으로 잘못
+ * 올린 자료를 "예제서식"으로 카테고리만 옮기는 것도 이 함수로 됩니다.
+ * materialType이 바뀌면 studentVisible(수강생 자료실 노출 여부)도 함께
+ * 자동으로 재계산해서 맞춰줍니다.
+ */
+export async function updateMaterialMetadataInFirestore(
+  id: string,
+  updates: {
+    title: string;
+    description?: string;
+    courseCategory: string;
+    materialType: MaterialItem["materialType"];
+  }
+): Promise<void> {
+  try {
+    const docRef = doc(db, "materials", id);
+    await setDoc(
+      docRef,
+      {
+        title: updates.title.trim(),
+        description: updates.description ? updates.description.trim() : "",
+        courseCategory: updates.courseCategory,
+        materialType: updates.materialType,
+        studentVisible: isStudentVisibleMaterialType(updates.materialType),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    handleFirestoreError(err, "updateMaterialMetadataInFirestore");
+  }
+}
+
 export async function getMaterialDownloadUrl(materialId: string): Promise<{ url: string; fileName: string }> {
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) {

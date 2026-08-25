@@ -10,6 +10,8 @@ import {
   AlertCircle,
   FileArchive,
   FileSpreadsheet as FileSpreadsheetIcon,
+  Edit3,
+  Save,
 } from 'lucide-react';
 import { MaterialItem } from '../types';
 import { MATERIAL_COURSE_CATEGORIES, MATERIAL_TYPES } from '../data/coursesData';
@@ -17,6 +19,7 @@ import {
   subscribeMaterialsFromFirestore,
   uploadMaterialToFirestore,
   deleteMaterialFromFirestore,
+  updateMaterialMetadataInFirestore,
   getMaterialDownloadUrl,
   backfillLegacyMaterialsVisibility,
 } from '../lib/firestoreService';
@@ -68,6 +71,16 @@ export const MaterialsAdminPanel: React.FC = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isBackfilling, setIsBackfilling] = useState(false);
+
+  // 등록된 자료 수정(인라인) 상태 — 파일을 다시 올리지 않고 제목/설명/과정
+  // 분류/자료 유형만 고칠 수 있습니다. 예를 들어 "학원서식"으로 잘못 올린
+  // 자료를 "예제서식"으로 옮기고 싶을 때 여기서 바로 바꿀 수 있습니다.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editCourseCategory, setEditCourseCategory] = useState(MATERIAL_COURSE_CATEGORIES[0]);
+  const [editMaterialType, setEditMaterialType] = useState<MaterialItem['materialType']>('학원서식');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -208,6 +221,42 @@ export const MaterialsAdminPanel: React.FC = () => {
     } finally {
       setDeletingId(null);
       setConfirmDeleteId(null);
+    }
+  };
+
+  const handleStartEdit = (item: MaterialItem) => {
+    setEditingId(item.id);
+    setEditTitle(item.title);
+    setEditDescription(item.description || '');
+    setEditCourseCategory(item.courseCategory);
+    setEditMaterialType(item.materialType);
+    setStatusMessage(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const handleSaveEdit = async (id: string) => {
+    if (!editTitle.trim()) {
+      setStatusMessage({ type: 'error', text: '자료 제목을 입력해 주세요.' });
+      return;
+    }
+    setIsSavingEdit(true);
+    try {
+      await updateMaterialMetadataInFirestore(id, {
+        title: editTitle,
+        description: editDescription,
+        courseCategory: editCourseCategory,
+        materialType: editMaterialType,
+      });
+      setStatusMessage({ type: 'success', text: `'${editTitle}' 자료 정보가 수정되었습니다.` });
+      setEditingId(null);
+    } catch (err) {
+      console.error('자료 수정 실패:', err);
+      setStatusMessage({ type: 'error', text: '수정 중 오류가 발생했습니다.' });
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -428,6 +477,83 @@ export const MaterialsAdminPanel: React.FC = () => {
           <div className="divide-y divide-slate-100">
             {materials.map((item) => {
               const Icon = getFileIcon(item.fileName);
+              const isEditing = editingId === item.id;
+
+              if (isEditing) {
+                return (
+                  <div key={item.id} className="p-4 bg-blue-50/50 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">과정 분류</label>
+                        <select
+                          value={editCourseCategory}
+                          onChange={(e) => setEditCourseCategory(e.target.value)}
+                          className="w-full p-2 rounded-xl border border-slate-200 text-xs bg-white"
+                        >
+                          {MATERIAL_COURSE_CATEGORIES.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                          자료 유형 <span className="font-normal text-slate-400">(예제서식·채점프로그램만 학생 공개)</span>
+                        </label>
+                        <select
+                          value={editMaterialType}
+                          onChange={(e) => setEditMaterialType(e.target.value as MaterialItem['materialType'])}
+                          className="w-full p-2 rounded-xl border border-slate-200 text-xs bg-white"
+                        >
+                          {MATERIAL_TYPES.map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">자료 제목</label>
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="w-full p-2 rounded-xl border border-slate-200 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">설명 (선택)</label>
+                      <textarea
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                        rows={2}
+                        className="w-full p-2 rounded-xl border border-slate-200 text-xs resize-y"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      파일( {item.fileName} )은 그대로 유지되고, 위 정보만 바뀝니다.
+                    </p>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCancelEdit}
+                        disabled={isSavingEdit}
+                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold cursor-pointer disabled:opacity-60"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(item.id)}
+                        disabled={isSavingEdit}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold cursor-pointer disabled:opacity-60 flex items-center gap-1"
+                      >
+                        {isSavingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        <span>{isSavingEdit ? '저장 중...' : '저장'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div key={item.id} className="p-4 flex items-center gap-3">
                   <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0">
@@ -441,6 +567,14 @@ export const MaterialsAdminPanel: React.FC = () => {
                       {' · '}다운로드 {item.downloadCount ?? 0}회
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => handleStartEdit(item)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors shrink-0"
+                    title="수정 (과정 분류·자료 유형·제목·설명)"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleDownload(item)}
