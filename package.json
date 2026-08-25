@@ -14,7 +14,8 @@
     "test:e2e": "npx --yes @playwright/test@1.55.0 test",
     "test:e2e:ui": "npx --yes @playwright/test@1.55.0 test --ui",
     "test:e2e:report": "npx --yes @playwright/test@1.55.0 show-report",
-    "backup:content": "node scripts/backup-content.mjs"
+    "backup:content": "node scripts/backup-content.mjs",
+    "test:rules": "firebase emulators:exec --only firestore,storage \"vitest run\""
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -42,6 +43,9 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
-    "@types/express": "^4.17.21"
+    "@types/express": "^4.17.21",
+    "vitest": "^3.0.5",
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase-tools": "^13.29.1"
   }
 }
