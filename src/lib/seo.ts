@@ -79,7 +79,6 @@ export function updatePageMeta(params: {
   setMetaByName("twitter:title", fullTitle);
   setMetaByName("twitter:description", params.description);
   setMetaByName("twitter:image", image);
-
   // 재단 홈페이지(nbnhappy.or.kr)의 SEOHead.tsx와 동일한 패턴: 페이지 전환마다
   // 그 페이지 전용 JSON-LD를 새로 만들어 <head>에 넣습니다. index.html의
   // 고정 JSON-LD(@id: #organization, #website)를 about/isPartOf로 참조해
