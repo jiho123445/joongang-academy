@@ -13,7 +13,6 @@ import {
   onSnapshot,
   serverTimestamp,
   writeBatch,
-  runTransaction,
   Timestamp,
   FirestoreError,
 } from "firebase/firestore";
@@ -115,27 +114,30 @@ export function formatReceiptNumber(
  * 문제가 있었습니다. 그 결과 동시에 신청한 여러 명이 똑같은 접수번호(예: 2608-1)
  * 를 받을 수 있었습니다.
  *
- * 이제는 별도의 counters/{YYMM} 문서를 Firestore 트랜잭션(runTransaction)으로
- * "이전 값 + 1"만큼만 원자적으로 증가시켜 채번합니다. 트랜잭션은 동시에 여러
- * 사용자가 접근해도 Firestore가 순서를 보장해 주므로 중복이 발생하지 않고,
- * counters 컬렉션은 개인정보를 담지 않으므로 공개 읽기/증가를 허용해도 안전합니다.
+ * (2026-08 업데이트) 처음에는 위 문제를 별도의 counters/{YYMM} 문서를
+ * 클라이언트에서 직접 Firestore 트랜잭션으로 "이전 값 + 1"만큼만 원자적으로
+ * 증가시키는 방식으로 고쳤습니다. 이 방식도 중복은 막았지만, counters
+ * 문서에 대한 쓰기 권한이 (범위를 제한했더라도) 비로그인 방문자에게 열려
+ * 있어서, 악의적으로 반복 호출하면 카운터 자체를 임의로 소진시킬 수 있는
+ * 여지가 있었습니다.
+ *
+ * 이제는 채번을 서버(Vercel 서버리스 함수 /api/next-receipt + Firebase Admin
+ * SDK)에서만 수행합니다. Admin SDK는 Firestore 보안규칙을 우회하므로,
+ * firestore.rules의 counters 컬렉션은 이제 관리자 전용(비로그인 방문자는
+ * 읽기/쓰기 모두 불가)으로 완전히 잠글 수 있습니다. 이 API가 실패하면(네트워크
+ * 오류 등) 아래 submitApplicationToFirestore의 catch에서 타임스탬프 기반
+ * 임시 번호로 대체합니다.
  */
 async function getNextReceiptNumber(targetYYMM: string): Promise<string> {
-  const counterRef = doc(db, "counters", targetYYMM);
-
-  const nextSeq = await runTransaction(db, async (transaction) => {
-    const counterSnap = await transaction.get(counterRef);
-    const current = counterSnap.exists() ? (counterSnap.data().count as number) || 0 : 0;
-    const next = current + 1;
-    if (counterSnap.exists()) {
-      transaction.update(counterRef, { count: next });
-    } else {
-      transaction.set(counterRef, { count: next });
-    }
-    return next;
-  });
-
-  return `${targetYYMM}-${nextSeq}`;
+  const response = await fetch("/api/next-receipt", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(`접수번호 발급 API 실패 (status ${response.status})`);
+  }
+  const data = await response.json();
+  if (!data?.receiptNumber || typeof data.receiptNumber !== "string") {
+    throw new Error("접수번호 발급 API 응답 형식이 올바르지 않습니다.");
+  }
+  return data.receiptNumber as string;
 }
 
 export async function submitApplicationToFirestore(data: {
@@ -767,7 +769,7 @@ export function subscribeCoursesFromFirestore(
         schedule: data.schedule || "",
         nationalSupport: Boolean(data.nationalSupport),
         subsidyRate: data.subsidyRate || "",
-        tuition: typeof data.tuition === "number" ? data.tuition : 0,
+        tuition: typeof data.tuition === "string" ? data.tuition : (typeof data.tuition === "number" ? String(data.tuition) : ""),
         selfPayEstimate: data.selfPayEstimate || "카드 유형별 상이",
         certificationTags: Array.isArray(data.certificationTags) ? data.certificationTags : [],
         curriculum: Array.isArray(data.curriculum) ? data.curriculum : [],
@@ -891,7 +893,7 @@ export async function addCourseToFirestore(data: CourseInput & { order?: number 
       schedule: data.schedule || "",
       nationalSupport: Boolean(data.nationalSupport),
       subsidyRate: data.subsidyRate || "",
-      tuition: typeof data.tuition === "number" ? data.tuition : 0,
+      tuition: typeof data.tuition === "string" ? data.tuition : (typeof data.tuition === "number" ? String(data.tuition) : ""),
       selfPayEstimate: data.selfPayEstimate || "카드 유형별 상이",
       certificationTags: Array.isArray(data.certificationTags) ? data.certificationTags : [],
       curriculum: Array.isArray(data.curriculum) ? data.curriculum : [],
@@ -1297,6 +1299,41 @@ export async function uploadMaterialToFirestore(
  * 승인되지 않은 계정은 애초에 링크 자체를 받을 수 없습니다. 다운로드
  * 횟수 집계도 이 안에서 서버가 함께 처리합니다.
  */
+/**
+ * 자료실 항목의 메타데이터(제목/설명/과정 분류/자료 유형)를 수정합니다.
+ * 실제 파일(Storage)은 건드리지 않고 Firestore 문서만 바꾸는 것이라
+ * 파일을 다시 올릴 필요가 없습니다 — 예를 들어 "학원서식"으로 잘못
+ * 올린 자료를 "예제서식"으로 카테고리만 옮기는 것도 이 함수로 됩니다.
+ * materialType이 바뀌면 studentVisible(수강생 자료실 노출 여부)도 함께
+ * 자동으로 재계산해서 맞춰줍니다.
+ */
+export async function updateMaterialMetadataInFirestore(
+  id: string,
+  updates: {
+    title: string;
+    description?: string;
+    courseCategory: string;
+    materialType: MaterialItem["materialType"];
+  }
+): Promise<void> {
+  try {
+    const docRef = doc(db, "materials", id);
+    await setDoc(
+      docRef,
+      {
+        title: updates.title.trim(),
+        description: updates.description ? updates.description.trim() : "",
+        courseCategory: updates.courseCategory,
+        materialType: updates.materialType,
+        studentVisible: isStudentVisibleMaterialType(updates.materialType),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    handleFirestoreError(err, "updateMaterialMetadataInFirestore");
+  }
+}
+
 export async function getMaterialDownloadUrl(materialId: string): Promise<{ url: string; fileName: string }> {
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) {

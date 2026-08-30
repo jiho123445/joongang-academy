@@ -3,6 +3,7 @@ import { Notice } from '../types';
 import { Bell, Calendar, ChevronRight, X, AlertCircle } from 'lucide-react';
 import { subscribeNoticesFromFirestore } from '../lib/firestoreService';
 import { useModalA11y } from '../lib/useModalA11y';
+import { updatePageMeta } from '../lib/seo';
 
 interface NoticeBoardProps {
   // 부모(App.tsx)가 URL(/notices/:id)과 동기화해서 관리하는 현재 열람 중인
@@ -24,6 +25,21 @@ export const NoticeBoard: React.FC<NoticeBoardProps> = ({ selectedNoticeId, onOp
   };
 
   const detailModalRef = useModalA11y(!!selectedNotice, closeDetail);
+
+  // 공지 상세를 열람 중일 때, App.tsx가 먼저 설정해둔 "공지사항" 섹션
+  // 기본 제목을, 실제 공지 제목/내용으로 더 구체적으로 덮어씁니다.
+  // (App.tsx는 공지 목록 데이터를 갖고 있지 않아서 여기서 처리합니다.)
+  useEffect(() => {
+    if (selectedNotice) {
+      const plainContent = (selectedNotice.content || '').replace(/\s+/g, ' ').trim();
+      updatePageMeta({
+        title: selectedNotice.title,
+        description: plainContent ? plainContent.slice(0, 120) : `${selectedNotice.category} 공지사항 안내`,
+        path: `/notices/${selectedNotice.id}`,
+        isDetail: true,
+      });
+    }
+  }, [selectedNotice]);
 
   useEffect(() => {
     const unsubscribe = subscribeNoticesFromFirestore((data) => {

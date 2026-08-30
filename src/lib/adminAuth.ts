@@ -46,6 +46,13 @@ export async function changeAdminPassword(currentPassword: string, newPassword: 
   if (!user || !user.email) {
     throw new Error("로그인 상태를 확인할 수 없습니다. 다시 로그인해 주세요.");
   }
+  // Firebase Auth 자체 최소 길이(6자)보다 훨씬 엄격하게, 관리자 계정에는
+  // 최소 12자를 요구합니다. 관리자 계정 하나가 공지사항·수강생 개인정보·
+  // 자료실·상담신청 전체를 관리하기 때문에, 짧은 비밀번호로 인한 피해
+  // 범위가 일반 계정보다 훨씬 큽니다(2026-08 보안 점검 반영).
+  if (newPassword.length < 12) {
+    throw new Error("관리자 비밀번호는 보안을 위해 12자 이상으로 설정해 주세요.");
+  }
   try {
     const credential = EmailAuthProvider.credential(user.email, currentPassword);
     await reauthenticateWithCredential(user, credential);

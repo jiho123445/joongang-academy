@@ -33,7 +33,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
 
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
               <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-slate-300">SINCE 1999</span>
-              <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-slate-300">jahrd.com</span>
+              <span className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-slate-300">jahrd.co.kr</span>
             </div>
           </div>
 
@@ -102,7 +102,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
 
         {/* Bottom Copyright */}
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
-          <p>© 1999-{new Date().getFullYear()} 홍천 중앙정보처리학원 (jahrd.com). All Rights Reserved.</p>
+          <p>© 1999-{new Date().getFullYear()} 홍천 중앙정보처리학원 (jahrd.co.kr). All Rights Reserved.</p>
           <p>
             <button
               onClick={() => setIsPrivacyOpen(true)}

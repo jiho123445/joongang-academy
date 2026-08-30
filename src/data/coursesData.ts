@@ -12,7 +12,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '오전반(10:00~12:00) / 오후반(14:00~16:00) / 야간반(19:00~21:00)',
     nationalSupport: true,
     subsidyRate: '최대 100% 국비지원',
-    tuition: 320000,
+    tuition: '320000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['컴퓨터활용능력 1급', '컴퓨터활용능력 2급'],
     curriculum: [
@@ -35,7 +35,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '월~금 매일 2시간 (주간반 / 야간반 선택 가능)',
     nationalSupport: true,
     subsidyRate: '100% 전액지원 ~ 최대 85%',
-    tuition: 450000,
+    tuition: '450000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['ITQ 한글', 'ITQ 엑셀', 'ITQ 파워포인트'],
     curriculum: [
@@ -57,7 +57,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '월/수/금 또는 화/목/토 (오후/야간반)',
     nationalSupport: true,
     subsidyRate: '국비지원 최대 80%',
-    tuition: 380000,
+    tuition: '380000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['전산회계 1급', '전산회계 2급', '전산세무 2급'],
     curriculum: [
@@ -80,7 +80,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '화/목 야간반 (19:00~21:30) / 주말반 (토 10:00~14:00)',
     nationalSupport: true,
     subsidyRate: '국비지원 50%~80%',
-    tuition: 400000,
+    tuition: '400000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['정보처리기능사', '정보처리산업기사', '정보처리기사'],
     curriculum: [
@@ -103,7 +103,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '월/수/금 오전반 (10:30 ~ 12:00)',
     nationalSupport: false,
     subsidyRate: '홍천군 지역 주민 할인 및 우대',
-    tuition: 150000,
+    tuition: '150000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['컴퓨터기초', '스마트폰활용'],
     curriculum: [
@@ -126,7 +126,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '월/수 야간반 (19:00~21:00) / 토요반 (10:00~13:00)',
     nationalSupport: true,
     subsidyRate: 'K-디지털 / 내일배움카드 지원',
-    tuition: 360000,
+    tuition: '360000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['파이썬입문', 'COS자격증', '생성형AI실무'],
     curriculum: [
@@ -149,7 +149,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '화/목 오후반 (14:00~16:00) / 야간반 (19:00~21:00)',
     nationalSupport: true,
     subsidyRate: '국비지원 50%~80%',
-    tuition: 300000,
+    tuition: '300000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['GTQ 포토샵 1급/2급', 'GTQi 일러스트'],
     curriculum: [
@@ -171,7 +171,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '토요일 (10:00~12:00 / 13:00~15:00)',
     nationalSupport: false,
     subsidyRate: '형제/자매 수강 할인 10%',
-    tuition: 200000,
+    tuition: '200000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['COS Pro', 'ITQ 학생', '정보올림피아드'],
     curriculum: [

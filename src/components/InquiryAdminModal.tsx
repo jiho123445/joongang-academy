@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { InquiryRecord, Notice, Course } from '../types';
+import { ACADEMY_INFO } from '../data/coursesData';
 import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
 import { MaterialsAdminPanel } from './MaterialsAdminPanel';
 import { StudentApprovalPanel } from './StudentApprovalPanel';
 import { AccountManagementPanel } from './AccountManagementPanel';
 import ExcelJS from 'exceljs';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { loginAdmin, logoutAdmin, onAdminAuthStateChanged, changeAdminPassword, getCurrentAdminEmail } from '../lib/adminAuth';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -70,6 +73,8 @@ import {
   Flame,
   Award,
   Users,
+  FileDown,
+  Loader2,
 } from 'lucide-react';
 
 export interface PopularCourseAdminItem {
@@ -163,6 +168,12 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
   // Real-time Popular Courses State (실시간 인기 수강 강좌)
   const [popularCourses, setPopularCourses] = useState<PopularCourseAdminItem[]>([]);
+  // "하반기 모집 일정" PDF 다운로드용 — 화면 밖에 인쇄용 서식을 그려둔 뒤
+  // html2canvas로 캡처해서 jsPDF로 저장합니다. 한글 폰트를 PDF에 직접
+  // 임베드하지 않아도(그러면 한글이 깨져 보이는 문제가 흔합니다) 화면에
+  // 보이는 그대로 이미지로 캡처하기 때문에 한글이 항상 정상적으로 나옵니다.
+  const scheduleFlyerRef = useRef<HTMLDivElement>(null);
+  const [isGeneratingSchedulePdf, setIsGeneratingSchedulePdf] = useState(false);
   const [isPopFormOpen, setIsPopFormOpen] = useState<boolean>(false);
   const [editingPopCourse, setEditingPopCourse] = useState<PopularCourseAdminItem | null>(null);
   const [popFormTitle, setPopFormTitle] = useState<string>('');
@@ -233,12 +244,17 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     title: string;
     message: string;
     confirmText?: string;
+    // 'danger'(빨간 버튼) — 삭제 등 되돌리기 어려운 작업. 'primary'(파란/보라
+    // 버튼) — 복구·저장처럼 안전한 작업. 기본값은 기존 호출부(전부 삭제
+    // 확인)와의 호환을 위해 'danger'로 둡니다.
+    tone?: 'danger' | 'primary';
     onConfirm: () => void;
   }>({
     isOpen: false,
     title: '',
     message: '',
     confirmText: '삭제하기',
+    tone: 'danger',
     onConfirm: () => {},
   });
 
@@ -246,13 +262,15 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     title: string,
     message: string,
     onConfirm: () => void,
-    confirmText = '삭제하기'
+    confirmText = '삭제하기',
+    tone: 'danger' | 'primary' = 'danger'
   ) => {
     setConfirmDialog({
       isOpen: true,
       title,
       message,
       confirmText,
+      tone,
       onConfirm,
     });
   };
@@ -415,8 +433,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     setChangePwError('');
     setChangePwSuccess('');
 
-    if (newPwInput.length < 6) {
-      setChangePwError('새 비밀번호는 6자 이상이어야 합니다.');
+    if (newPwInput.length < 12) {
+      setChangePwError('새 비밀번호는 보안을 위해 12자 이상으로 설정해 주세요.');
       return;
     }
     if (newPwInput !== newPwConfirmInput) {
@@ -652,8 +670,72 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     );
   };
 
+  const handleDownloadSchedulePdf = async () => {
+    if (popularCourses.length === 0) {
+      alert('등록된 모집 일정이 없습니다. 먼저 인기 강좌를 등록해 주세요.');
+      return;
+    }
+    if (!scheduleFlyerRef.current) return;
+
+    setIsGeneratingSchedulePdf(true);
+    try {
+      // 화면 밖에 그려둔 인쇄용 서식을 그대로 이미지로 캡처합니다. scale을
+      // 2로 주는 이유는 화면 해상도(1x)로 캡처하면 PDF에서 글자가 흐릿하게
+      // 보이기 때문입니다(인쇄물 수준 선명도를 위한 값).
+      const canvas = await html2canvas(scheduleFlyerRef.current, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+      });
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      if (imgHeight <= pageHeight) {
+        // 한 페이지에 다 들어가면 그대로 한 장으로 저장합니다.
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      } else {
+        // 목록이 길어 한 페이지를 넘으면, 이미지를 페이지 높이만큼씩
+        // 잘라가며 여러 페이지에 나눠 붙입니다.
+        let heightLeft = imgHeight;
+        let position = 0;
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+      }
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      pdf.save(`홍천중앙정보처리학원_모집일정_${dateStr}.pdf`);
+    } catch (err) {
+      console.error('모집 일정 PDF 생성 실패:', err);
+      alert('PDF 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsGeneratingSchedulePdf(false);
+    }
+  };
+
   const courseCategoryOptions: Course['category'][] = ['국비지원', '자격증', '실무·기초', '코딩·AI', '학생·특강'];
   const [isRestoringDefaults, setIsRestoringDefaults] = useState<boolean>(false);
+  // 교육과정 목록이 스크롤 영역 안에 있어서, 목록 아래쪽에서 "수정"을 누르면
+  // 편집 폼이 목록 위쪽에 나타나도 화면에 보이지 않는 문제가 있었습니다
+  // (실제로는 편집 모드로 정상 진입했지만, 스크롤이 안 따라가서 마치
+  // "아무 반응이 없다"처럼 보였습니다). 폼이 열릴 때마다 그 위치로 자동
+  // 스크롤해서 바로 보이도록 합니다.
+  const courseFormRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (isCourseFormOpen) {
+      courseFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [isCourseFormOpen]);
 
   const handleRestoreDefaultCourses = () => {
     requestConfirm(
@@ -675,7 +757,9 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
         } finally {
           setIsRestoringDefaults(false);
         }
-      }
+      },
+      '복구하기',
+      'primary'
     );
   };
 
@@ -734,7 +818,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       schedule: courseFormSchedule.trim(),
       nationalSupport: courseFormNationalSupport,
       subsidyRate: courseFormSubsidyRate.trim(),
-      tuition: courseFormTuition ? Number(courseFormTuition) || 0 : 0,
+      tuition: courseFormTuition.trim(),
       selfPayEstimate: courseFormSelfPayEstimate.trim() || '카드 유형별 상이',
       certificationTags: courseFormCertTags
         .split(',')
@@ -2504,15 +2588,96 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               </div>
 
               {!isPopFormOpen && (
-                <button
-                  type="button"
-                  onClick={handleOpenCreatePopForm}
-                  className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>새 인기 강좌 등록</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadSchedulePdf}
+                    disabled={isGeneratingSchedulePdf}
+                    className="px-4 py-2.5 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-black text-xs sm:text-sm rounded-2xl shadow-sm border border-slate-200 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                    title="지금 등록된 모집 일정을 인쇄용 PDF 파일로 저장합니다"
+                  >
+                    {isGeneratingSchedulePdf ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FileDown className="w-4 h-4" />
+                    )}
+                    <span>{isGeneratingSchedulePdf ? 'PDF 생성 중...' : '모집 일정 PDF 다운로드'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenCreatePopForm}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>새 인기 강좌 등록</span>
+                  </button>
+                </div>
               )}
+            </div>
+
+            {/* PDF 생성용 인쇄 서식 (화면에는 안 보이고, 다운로드 버튼을 눌렀을 때만
+                html2canvas가 이 DOM을 캡처해서 PDF로 만듭니다) */}
+            <div style={{ position: 'fixed', left: '-9999px', top: 0, zIndex: -1 }}>
+              <div
+                ref={scheduleFlyerRef}
+                style={{
+                  width: '800px',
+                  padding: '48px',
+                  backgroundColor: '#ffffff',
+                  fontFamily: "'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif",
+                  color: '#0f172a',
+                }}
+              >
+                <div style={{ textAlign: 'center', marginBottom: '32px', borderBottom: '3px solid #2563eb', paddingBottom: '24px' }}>
+                  <p style={{ fontSize: '14px', color: '#2563eb', fontWeight: 800, margin: 0 }}>
+                    {ACADEMY_INFO.name}
+                  </p>
+                  <h1 style={{ fontSize: '30px', fontWeight: 900, margin: '8px 0 0 0' }}>
+                    {new Date().getFullYear()}년 {new Date().getMonth() < 6 ? '상반기' : '하반기'} 모집 일정
+                  </h1>
+                  <p style={{ fontSize: '12px', color: '#64748b', margin: '8px 0 0 0' }}>
+                    게시일: {new Date().toISOString().slice(0, 10)}
+                  </p>
+                </div>
+
+                <div>
+                  {popularCourses.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      style={{
+                        padding: '20px',
+                        marginBottom: '16px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '16px',
+                        pageBreakInside: 'avoid',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 800, color: '#2563eb' }}>{item.badge}</span>
+                        {item.startDate && (
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#1d4ed8', backgroundColor: '#eff6ff', padding: '3px 10px', borderRadius: '999px' }}>
+                            개강: {item.startDate}
+                          </span>
+                        )}
+                      </div>
+                      <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 6px 0' }}>{item.title}</h3>
+                      {item.description && (
+                        <p style={{ fontSize: '13px', color: '#475569', margin: '0 0 6px 0' }}>{item.description}</p>
+                      )}
+                      {item.timeSlot && (
+                        <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>{item.timeSlot}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: '32px', paddingTop: '20px', borderTop: '1px solid #e2e8f0', textAlign: 'center', fontSize: '12px', color: '#64748b' }}>
+                  <p style={{ margin: '0 0 4px 0' }}>{ACADEMY_INFO.address}</p>
+                  <p style={{ margin: 0 }}>
+                    전화: {ACADEMY_INFO.phone} · {ACADEMY_INFO.domain.replace(/\/$/, '')}
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Add / Edit Form Box */}
@@ -2771,7 +2936,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
             {/* Add / Edit Form Box */}
             {isCourseFormOpen && (
-              <form onSubmit={handleSaveCourseSubmit} className="bg-white p-6 rounded-3xl border border-indigo-200 shadow-md space-y-4 animate-fadeIn">
+              <form ref={courseFormRef} onSubmit={handleSaveCourseSubmit} className="bg-white p-6 rounded-3xl border border-indigo-200 shadow-md space-y-4 animate-fadeIn">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
                     <Edit3 className="w-4 h-4 text-indigo-600" />
@@ -2832,7 +2997,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                       value={courseFormDescription}
                       onChange={(e) => setCourseFormDescription(e.target.value)}
                       placeholder="과정에 대한 상세 소개를 적어주세요."
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 leading-relaxed"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 leading-relaxed resize-y"
                     />
                   </div>
 
@@ -2892,12 +3057,12 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                   </div>
 
                   <div className="md:col-span-6">
-                    <label className="block text-xs font-extrabold text-slate-700 mb-1">일반 수강료 (원, 참고용)</label>
+                    <label className="block text-xs font-extrabold text-slate-700 mb-1">일반 수강료 (참고용)</label>
                     <input
-                      type="number"
+                      type="text"
                       value={courseFormTuition}
                       onChange={(e) => setCourseFormTuition(e.target.value)}
-                      placeholder="예: 320000"
+                      placeholder="예: 320000 또는 협의 / 국비 100% 지원시 무료"
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
                     />
                   </div>
@@ -2941,7 +3106,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                       value={courseFormCurriculum}
                       onChange={(e) => setCourseFormCurriculum(e.target.value)}
                       placeholder={'1주차: ...\n2주차: ...\n3주차: ...'}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 leading-relaxed"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 leading-relaxed resize-y"
                     />
                   </div>
                 </div>
@@ -3519,7 +3684,11 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                     setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
                     action();
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-colors cursor-pointer"
+                  className={`px-4 py-2.5 rounded-xl text-white text-xs font-bold shadow-md transition-colors cursor-pointer ${
+                    confirmDialog.tone === 'primary'
+                      ? 'bg-indigo-600 hover:bg-indigo-700'
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
                 >
                   {confirmDialog.confirmText || '삭제하기'}
                 </button>
@@ -3566,7 +3735,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                   type="password"
                   value={newPwInput}
                   onChange={(e) => { setNewPwInput(e.target.value); setChangePwError(''); }}
-                  placeholder="새 비밀번호 (6자 이상)"
+                  placeholder="새 비밀번호 (12자 이상)"
                   autoComplete="new-password"
                   className="w-full px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-300 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-slate-900"
                   required
