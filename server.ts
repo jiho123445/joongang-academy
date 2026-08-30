@@ -17,14 +17,14 @@ async function startServer() {
     res.json({ status: "ok", academy: "홍천 중앙정보처리학원" });
   });
 
-  // 동적 sitemap (프로덕션에서는 Vercel이 api/sitemap.ts로 라우팅합니다.
-  // 로컬 개발 중에도 동일하게 테스트할 수 있도록 여기서도 같은 핸들러를 씁니다.)
-  app.get("/sitemap.xml", async (req, res) => {
-    const { default: sitemapHandler } = await import("./api/sitemap");
-    // @ts-ignore - Express Request/Response는 VercelRequest/VercelResponse와
-    // 이 핸들러가 실제로 쓰는 메서드(status/setHeader/send) 형태가 호환됩니다.
-    await sitemapHandler(req as any, res as any);
-  });
+  // sitemap.xml/rss.xml은 더 이상 요청마다 서버가 만들지 않습니다. 매 요청
+  // 마다 Firestore를 호출하는 서버리스 함수(예전 api/sitemap.ts) 구조는
+  // 재단 홈페이지(nbnhappy.or.kr)에서 실제로 프로덕션 중 FUNCTION_INVOCATION_
+  // FAILED로 죽은 전례가 있어, 이 사이트는 scripts/generate-static-seo.mjs가
+  // 빌드타임(vite build 직후)에 한 번 만들어 dist/sitemap.xml, dist/rss.xml로
+  // 내보내는 정적 파일 방식으로 바꿨습니다. 로컬에서 확인하려면
+  // `npm run build && npm run preview` 후 http://localhost:.../sitemap.xml
+  // 로 접속하세요(개발 모드 `npm run dev`는 dist/가 없어 정적 파일이 없습니다).
 
   // AI Course Advice Endpoint using Gemini
   // (프로덕션/Vercel에서는 api/ask-ai.ts 서버리스 함수가 같은 로직을
