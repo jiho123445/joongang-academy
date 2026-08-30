@@ -28,7 +28,11 @@ import fs from "fs";
 import path from "path";
 
 const PROJECT_ID = "joongang-homepage";
-const SITE_ORIGIN = "https://www.jahrd.co.kr";
+// (2026-08) www.jahrd.co.kr는 실제로 jahrd.co.kr(www 없음)로 301 리다이렉트되는
+// 주소입니다. sitemap.xml/rss.xml/미리보기 페이지에 www 주소를 넣으면 검색
+// 엔진이 그 URL을 가져올 때마다 리다이렉트를 한 번 더 타야 해서, 대표 주소를
+// jahrd.co.kr(www 없음)로 통일합니다.
+const SITE_ORIGIN = "https://jahrd.co.kr";
 const SITE_NAME = "홍천 중앙정보처리학원";
 const DIST_DIR = path.join(process.cwd(), "dist");
 
