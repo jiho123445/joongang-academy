@@ -218,10 +218,17 @@ export default function App() {
   // 섹션(페이지)별 <title>/description — PageHeader에 실제로 표시되는
   // 문구와 동일하게 맞춰서, 브라우저 탭 제목과 검색엔진에 보이는 제목이
   // 화면 내용과 일치하도록 합니다.
+  // ⚠️ home 항목은 index.html의 <title>/<meta name="description">과 반드시
+  // 동일하게 유지해야 합니다. 이 SPA는 페이지가 열리면(아래 useEffect) 이 값으로
+  // index.html의 정적 태그를 곧바로 덮어쓰기 때문에, 둘이 다르면 방문 직후
+  // index.html에 적어둔 값이 순식간에 이 값으로 되돌아가 버립니다(실제로 이
+  // 문제가 있었습니다: index.html만 "홍천컴퓨터학원" 문구로 고쳤는데 여기는
+  // 그대로 둬서, 실제 방문자·JS를 실행하는 검색엔진에게는 옛날 문구가 계속
+  // 보였습니다). index.html을 고칠 때는 항상 이 home 항목도 같이 고쳐주세요.
   const SECTION_META: Record<string, { title: string; description: string }> = {
     home: {
-      title: '국비지원 컴퓨터·IT 교육',
-      description: '1999년 설립, 27년 전통의 홍천 대표 IT·컴퓨터 교육기관. 국민내일배움카드 국비지원, 컴퓨터활용능력, 전산세무회계, 시니어 컴퓨터, 파이썬&AI 맞춤형 교육을 제공합니다.',
+      title: '홍천컴퓨터학원 | 홍천 중앙정보처리학원 | 국비지원 컴퓨터·IT 교육',
+      description: '홍천컴퓨터학원 - 국비지원 컴퓨터활용능력, 전산세무회계, 시니어·파이썬&AI 교육을 제공하는 중앙정보처리학원입니다.',
     },
     courses: {
       title: '전체 교육과정',
@@ -267,7 +274,8 @@ export default function App() {
 
     const meta = SECTION_META[activeSection] || SECTION_META.home;
     const path = activeSection === 'home' ? '/' : `/${activeSection}`;
-    updatePageMeta({ title: meta.title, description: meta.description, path });
+    const isHome = activeSection === 'home' || activeSection === 'hero';
+    updatePageMeta({ title: meta.title, description: meta.description, path, titleIsFull: isHome });
     // selectedNoticeId가 있을 때(공지 상세)는 NoticeBoard가 공지 내용을
     // 불러온 뒤 이 기본값을 더 구체적인 제목으로 다시 덮어씁니다.
   }, [activeSection, selectedCourseForModal]);
