@@ -259,7 +259,7 @@ export const ACADEMY_INFO = {
   fax: '033-433-1928',
   email: 'jiho1234@hanmail.net',
   businessHours: '평일 09:00 - 21:30 | 토요일 09:00 - 15:00 | 일요일/공휴일 휴무',
-  domain: 'https://www.jahrd.co.kr/',
+  domain: 'https://jahrd.co.kr/',
   busInfo: '홍천시외버스터미널 도보 5분 / 중앙약국 맞은편 하차',
   features: [
     { title: '1999년 설립 전통', desc: '27년 이상 축적된 깊은 교육 노하우와 지역 사회 신뢰' },

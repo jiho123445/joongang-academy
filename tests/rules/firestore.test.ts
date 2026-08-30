@@ -95,9 +95,42 @@ describe("applications — 수강신청 (개인정보 포함)", () => {
     const anon = testEnv.unauthenticatedContext().firestore();
     await assertSucceeds(
       addDoc(collection(anon, "applications"), {
+        // 실제 신청 화면(firestoreService.ts)이 보내는 것과 동일한 형태:
+        // status/adminNotes/receiptNumber도 항상 함께 전송되며, 새 규칙은
+        // 이 필드들이 신규 신청 기본값과 정확히 일치할 때만 허용합니다.
         name: "홍길동",
         phone: "010-1234-5678",
         message: "문의합니다",
+        status: "상담대기",
+        adminNotes: "",
+        receiptNumber: "2608-1",
+      })
+    );
+  });
+
+  it("[차단] status를 기본값이 아닌 값으로 위조하면 거부된다", async () => {
+    const anon = testEnv.unauthenticatedContext().firestore();
+    await assertFails(
+      addDoc(collection(anon, "applications"), {
+        name: "홍길동",
+        phone: "010-1234-5678",
+        status: "등록완료",
+        adminNotes: "",
+        receiptNumber: "2608-1",
+      })
+    );
+  });
+
+  it("[차단] 허용되지 않은 필드(예: adminOverride)가 섞여 있으면 거부된다", async () => {
+    const anon = testEnv.unauthenticatedContext().firestore();
+    await assertFails(
+      addDoc(collection(anon, "applications"), {
+        name: "홍길동",
+        phone: "010-1234-5678",
+        status: "상담대기",
+        adminNotes: "",
+        receiptNumber: "2608-1",
+        adminOverride: true,
       })
     );
   });

@@ -17,7 +17,11 @@
  */
 
 const SITE_NAME = "홍천 중앙정보처리학원";
-const SITE_ORIGIN = "https://www.jahrd.co.kr";
+// (2026-08) www.jahrd.co.kr는 jahrd.co.kr(www 없음)로 301 리다이렉트되는 주소라,
+// canonical/og:url을 www로 계속 내보내면 검색엔진이 이 페이지를 가져올 때마다
+// 리다이렉트를 한 번 더 타야 합니다. index.html/scripts/generate-static-seo.mjs와
+// 동일하게 대표 주소를 jahrd.co.kr(www 없음)로 통일합니다.
+const SITE_ORIGIN = "https://jahrd.co.kr";
 const DEFAULT_OG_IMAGE = `${SITE_ORIGIN}/og-image.jpg`;
 
 function setMetaByName(name: string, content: string) {

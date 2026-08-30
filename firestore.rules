@@ -60,13 +60,28 @@ service cloud.firestore {
     // create 시 최소한의 형식/길이 검증을 추가해 비정상적으로 크거나 형식이
     // 어긋난 스팸성 데이터가 저장되는 것을 서버(Firestore) 단에서도 막습니다.
     match /applications/{applicationId} {
+      // (2026-08 강화) 기존 검증은 name/phone 형식만 확인해서, 화면을 거치지
+      // 않고 Firestore를 직접 호출하면 status를 "등록완료" 등으로 위조하거나,
+      // adminNotes에 임의 텍스트를 채우거나, receiptNumber를 비정상적으로
+      // 길게 넣는 것까지는 막지 못했습니다. 이제 문서에 들어갈 수 있는 필드를
+      // 실제 신청 화면(firestoreService.ts)이 보내는 필드로만 제한하고,
+      // status/adminNotes는 항상 신규 신청의 기본값만 허용합니다.
       allow create: if request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 50
         && request.resource.data.phone is string
         && request.resource.data.phone.size() >= 9
         && request.resource.data.phone.size() <= 20
-        && (!('message' in request.resource.data) || request.resource.data.message.size() <= 1000);
+        && (!('message' in request.resource.data) || request.resource.data.message.size() <= 1000)
+        && request.resource.data.keys().hasOnly([
+          "name", "phone", "course", "courseInterest", "preferredTime",
+          "hasNaeilCard", "userCategory", "memo", "message", "status",
+          "adminNotes", "receiptNumber", "createdAt", "createdAtIso"
+        ])
+        && request.resource.data.status == "상담대기"
+        && request.resource.data.adminNotes == ""
+        && request.resource.data.receiptNumber is string
+        && request.resource.data.receiptNumber.size() <= 30;
       allow read, update, delete: if isAdmin();
     }
 
