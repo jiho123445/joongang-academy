@@ -58,10 +58,25 @@ export function updatePageMeta(params: {
   keywords?: string;
   /** 공지/강좌 상세처럼 개별 콘텐츠 페이지면 true — JSON-LD @type을 Article로 씁니다. */
   isDetail?: boolean;
+  /**
+   * true면 title을 그대로 <title>에 씁니다(앞에 "학원명 | "를 자동으로 붙이지
+   * 않음). 홈 화면처럼 "홍천컴퓨터학원 | 홍천 중앙정보처리학원 | ..." 같이
+   * 자체적으로 완성된 제목 문자열을 index.html과 동일하게 유지해야 할 때
+   * 씁니다.
+   *
+   * ⚠️ 왜 필요한가: 이 함수는 페이지가 열릴 때마다(App.tsx의 useEffect) 호출돼
+   * index.html에 적힌 <title>/description을 덮어씁니다. 예전에는 홈 화면
+   * title도 무조건 "학원명 | 짧은제목"으로 재조립했는데, index.html의 실제
+   * <title>은 "홍천컴퓨터학원 | 홍천 중앙정보처리학원 | ..." 형태라 서로 달라서,
+   * 정적 HTML(비-JS 크롤러가 보는 값)과 자바스크립트 실행 후 값(JS를 실행하는
+   * 크롤러·실제 방문자가 보는 값)이 서로 다른 상태가 됐습니다 — index.html만
+   * 고쳐서는 실제로 반영되지 않고 몇 초 뒤 이 값으로 다시 덮어써지는 버그였습니다.
+   */
+  titleIsFull?: boolean;
 }) {
   // index.html의 원래 기본 제목("홍천 중앙정보처리학원 | 국비지원 컴퓨터·IT
   // 교육")과 동일한 순서(학원명이 앞)를 유지합니다.
-  const fullTitle = `${SITE_NAME} | ${params.title}`;
+  const fullTitle = params.titleIsFull ? params.title : `${SITE_NAME} | ${params.title}`;
   const url = `${SITE_ORIGIN}${params.path}`;
   const image = params.image || DEFAULT_OG_IMAGE;
 
@@ -79,6 +94,7 @@ export function updatePageMeta(params: {
   setMetaByName("twitter:title", fullTitle);
   setMetaByName("twitter:description", params.description);
   setMetaByName("twitter:image", image);
+
   // 재단 홈페이지(nbnhappy.or.kr)의 SEOHead.tsx와 동일한 패턴: 페이지 전환마다
   // 그 페이지 전용 JSON-LD를 새로 만들어 <head>에 넣습니다. index.html의
   // 고정 JSON-LD(@id: #organization, #website)를 about/isPartOf로 참조해
