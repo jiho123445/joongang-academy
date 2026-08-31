@@ -215,6 +215,19 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  // (2026-08 추가) "추가 문의사항" 칸이 좁아서 line-clamp-3으로 잘린 내용을
+  // 원장님이 클릭 한 번으로 전체 펼쳐볼 수 있게 하는 상태. 신청 건 id를
+  // 담아두고, 이 Set에 들어있는 행은 잘림 없이 전체 텍스트를 보여줍니다.
+  const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set());
+  const toggleMessageExpanded = (id: string) => {
+    setExpandedMessageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   // Default 4 schedules
   const defaultSchedules: ScheduleItem[] = [
     { courseName: '컴퓨터활용능력 (1급 / 2급)', startDate: '9월 08일 개강', timeSlot: '오전 10:00 / 야간 19:00' },
@@ -3548,11 +3561,24 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                       </td>
 
                       {/* Message */}
-                      <td className="p-3.5 text-slate-600 text-xs">
+                      <td className="p-3.5 text-slate-600 text-xs max-w-[220px]">
                         {item.message ? (
-                          <div className="p-2 bg-slate-50 rounded-xl border border-slate-200/60 line-clamp-3 italic">
+                          <button
+                            type="button"
+                            onClick={() => toggleMessageExpanded(item.id)}
+                            className={`w-full text-left p-2 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200/60 italic cursor-pointer transition-colors ${
+                              expandedMessageIds.has(item.id) ? 'whitespace-pre-wrap break-words' : 'line-clamp-3'
+                            }`}
+                            title={expandedMessageIds.has(item.id) ? '클릭하면 다시 접습니다' : '클릭하면 전체 내용을 볼 수 있습니다'}
+                          >
                             "{item.message}"
-                          </div>
+                            {!expandedMessageIds.has(item.id) && (
+                              <span className="block not-italic text-[10px] text-blue-500 font-bold mt-0.5">▼ 전체보기</span>
+                            )}
+                            {expandedMessageIds.has(item.id) && (
+                              <span className="block not-italic text-[10px] text-blue-500 font-bold mt-1">▲ 접기</span>
+                            )}
+                          </button>
                         ) : (
                           <span className="text-slate-300">-</span>
                         )}
