@@ -30,9 +30,10 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
   const navItems = [
     { id: 'home', label: '홈' },
     { id: 'courses', label: '교육과정' },
-    { id: 'national-support', label: '국비지원(내일배움)' },
+    { id: 'national-support', label: '국비지원' },
     { id: 'intro', label: '학원소개' },
     { id: 'notices', label: '공지·시험일정' },
+    { id: 'materials', label: '자료실' },
     { id: 'inquiry', label: '온라인 수강문의' },
     { id: 'location', label: '오시는길' },
   ];
@@ -102,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
           </div>
 
           {/* Desktop Navigation Links - Single Line Strict */}
-          <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 shrink-0">
+          <nav className="hidden lg:flex items-center gap-0.5 xl:gap-1.5 shrink-0">
             {navItems.map((item) => {
               const isActive = activeSection === item.id;
               return (
@@ -110,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
                   id={`nav-${item.id}`}
-                  className={`px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`px-2 xl:px-3 py-1.5 rounded-xl text-sm xl:text-base font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                     isActive
                       ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-200'
                       : 'text-slate-700 hover:text-blue-600 hover:bg-white/70'

@@ -1,10 +1,12 @@
 /**
  * adminAuth.ts - 관리자 인증 모듈
  *
- * Firestore 보안규칙(isAdmin() = request.auth != null)이 실제로 이 로그인 상태를
- * 검사하므로, 여기서 로그인이 성공해야만 관리자 화면의 조회/수정/삭제 요청이
- * Firestore에서 허용됩니다. (예전의 "PIN 4001" 입력은 화면만 가리는 장식이었고
- * 실제 데이터 접근권한과는 무관했습니다.)
+ * 여기서 로그인이 성공해도 그것만으로 관리자 권한이 생기는 건 아닙니다.
+ * 실제 데이터 접근 권한은 Firestore 보안규칙의 isAdmin() 함수가 최종
+ * 판단하는데, 이 함수는 단순 로그인 여부가 아니라 Firestore의 `admins`
+ * 컬렉션에 본인 UID로 된 문서가 실제로 존재하는지까지 확인합니다.
+ * 즉 로그인은 여기(Firebase Authentication)에서, 권한 판단은 Firestore
+ * 규칙(및 서버리스 함수의 Admin SDK 검증)에서 이뤄지는 구조입니다.
  */
 import {
   signInWithEmailAndPassword,
@@ -43,6 +45,13 @@ export async function changeAdminPassword(currentPassword: string, newPassword: 
   const user = auth.currentUser;
   if (!user || !user.email) {
     throw new Error("로그인 상태를 확인할 수 없습니다. 다시 로그인해 주세요.");
+  }
+  // Firebase Auth 자체 최소 길이(6자)보다 훨씬 엄격하게, 관리자 계정에는
+  // 최소 12자를 요구합니다. 관리자 계정 하나가 공지사항·수강생 개인정보·
+  // 자료실·상담신청 전체를 관리하기 때문에, 짧은 비밀번호로 인한 피해
+  // 범위가 일반 계정보다 훨씬 큽니다(2026-08 보안 점검 반영).
+  if (newPassword.length < 12) {
+    throw new Error("관리자 비밀번호는 보안을 위해 12자 이상으로 설정해 주세요.");
   }
   try {
     const credential = EmailAuthProvider.credential(user.email, currentPassword);

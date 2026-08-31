@@ -2,10 +2,33 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // 헬퍼 함수: 관리자 로그인 여부 확인
+
+    // 헬퍼 함수: 관리자 여부 확인
+    // 단순히 "로그인 되어 있으면 관리자"가 아니라, admins 컬렉션에
+    // 본인 UID로 된 문서가 실제로 존재하는 사람만 관리자로 인정합니다.
+    // Firebase Authentication에 계정이 새로 하나 생기더라도, admins 컬렉션에
+    // 등록돼 있지 않으면 자동으로 관리자 권한을 갖지 못합니다.
+    //
+    // ⚠️ 배포 전 필수 작업: Firebase 콘솔 → Firestore Database →
+    //    'admins' 컬렉션 생성 → 원장님 계정의 UID를 문서 ID로 문서 추가
+    //    (Authentication 탭에서 UID 확인 가능, 문서 내용은 { email: "..." } 등 자유)
     function isAdmin() {
-      return request.auth != null;
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // 헬퍼 함수: 승인된 수강생 여부 확인
+    function isApprovedStudent() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/students/$(request.auth.uid))
+        && get(/databases/$(database)/documents/students/$(request.auth.uid)).data.status == '승인됨';
+    }
+
+    // 0. 관리자 목록('admins') - 관리자 본인만 자기 문서를 읽을 수 있고,
+    // 쓰기는 Firebase 콘솔에서 직접 등록/삭제 (클라이언트에서 쓰기 불가)
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
     }
 
     // 1. 공지사항('notices') & 인기강좌('popular_courses')
@@ -20,6 +43,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // 2. 개강 팝업 등 사이트 설정('settings')
     // 누구나 읽기 가능, 관리자만 쓰기 가능
     match /settings/{settingId} {
@@ -29,9 +57,141 @@ service cloud.firestore {
 
     // 3. 수강신청('applications') - 이름/전화번호 등 개인정보 포함
     // 누구나 작성(create)만 가능, 조회/수정/삭제는 관리자만 (개인정보 보호 핵심 규칙)
+    // create 시 최소한의 형식/길이 검증을 추가해 비정상적으로 크거나 형식이
+    // 어긋난 스팸성 데이터가 저장되는 것을 서버(Firestore) 단에서도 막습니다.
     match /applications/{applicationId} {
-      allow create: if true;
+      // (2026-08 강화) 기존 검증은 name/phone 형식만 확인해서, 화면을 거치지
+      // 않고 Firestore를 직접 호출하면 status를 "등록완료" 등으로 위조하거나,
+      // adminNotes에 임의 텍스트를 채우거나, receiptNumber를 비정상적으로
+      // 길게 넣는 것까지는 막지 못했습니다. 이제 문서에 들어갈 수 있는 필드를
+      // 실제 신청 화면(firestoreService.ts)이 보내는 필드로만 제한하고,
+      // status/adminNotes는 항상 신규 신청의 기본값만 허용합니다.
+      allow create: if request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 50
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 9
+        && request.resource.data.phone.size() <= 20
+        && (!('message' in request.resource.data) || request.resource.data.message.size() <= 1000)
+        && request.resource.data.keys().hasOnly([
+          "name", "phone", "course", "courseInterest", "preferredTime",
+          "hasNaeilCard", "userCategory", "memo", "message", "status",
+          "adminNotes", "receiptNumber", "createdAt", "createdAtIso"
+        ])
+        && request.resource.data.status == "상담대기"
+        && request.resource.data.adminNotes == ""
+        && request.resource.data.receiptNumber is string
+        && request.resource.data.receiptNumber.size() <= 30;
       allow read, update, delete: if isAdmin();
+    }
+
+    // 4. 접수번호 카운터('counters') - 수강신청 접수번호(YYMM-N) 발급용
+    // (2026-08 업데이트) 채번은 이제 클라이언트가 아니라 서버(Vercel 서버리스
+    // 함수 /api/next-receipt + Firebase Admin SDK)에서만 이뤄집니다. Admin
+    // SDK는 이 규칙 자체를 우회하므로 실제 채번 동작에는 영향이 없고, 이
+    // 규칙은 "비로그인 방문자가 클라이언트 SDK로 counters를 직접 읽거나
+    // 쓰는 것"만 완전히 차단합니다. (예전에는 "이전 값 + 1"로만 증가하도록
+    // 형식을 제한해 열어뒀었는데, 그마저도 반복 호출로 카운터를 임의로
+    // 소진시킬 수 있는 known limitation이 있었습니다. 이제는 그 경로 자체가
+    // 없습니다.)
+    match /counters/{counterId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 5. 자료실 메타데이터('materials') - 서식/예제/채점프로그램 등 다운로드 목록
+    // 실제 파일은 Storage(materials/)에 있고, 여기에는 제목·설명·분류·파일경로
+    // 같은 메타데이터만 저장합니다. 재원생(승인된 수강생) 또는 관리자만 조회
+    // 가능하며, 쓰기(업로드 기록 생성/삭제)는 관리자만 가능합니다.
+    //
+    // ⚠️ '학원서식' 유형은 학원 내부용 서류 성격이라, 승인된 수강생이어도
+    // 볼 수 없고 관리자만 조회 가능하도록 별도로 막았습니다.
+    //
+    // ⚠️ 중요: 이 조건은 `studentVisible` 필드(불리언)로 판단합니다.
+    // `resource.data.materialType != '학원서식'`처럼 문서마다 값이 다른
+    // 조건을 쓰면 안 되는 이유는, Firestore 쿼리 보안 규칙은 "필터"가
+    // 아니라 "쿼리가 반환할 수 있는 모든 문서가 규칙을 통과해야 쿼리 전체가
+    // 허용되는" 방식이기 때문입니다. 클라이언트 쿼리에 정확히 이 필드에
+    // 대한 where 절이 있어야(subscribeVisibleMaterialsFromFirestore 참고)
+    // Firestore가 "이 쿼리의 모든 결과는 studentVisible == true"임을
+    // 정적으로 보장할 수 있고, 그래야 승인된 수강생의 조회가 정상 허용됩니다.
+    // (이 field 없이 문서 내용 기반 조건만 썼을 때는, 컬렉션에 학원서식이
+    // 하나라도 있으면 승인된 수강생의 조회 자체가 통째로 거부되는 문제가
+    // 있었습니다.)
+    match /materials/{materialId} {
+      allow read: if isAdmin()
+        || (isApprovedStudent() && resource.data.studentVisible == true);
+      // 자료 업로드/삭제/수정(다운로드 횟수 포함)은 전부 관리자만 가능합니다.
+      // 다운로드 횟수는 api/download-material.ts가 Firebase Admin SDK로
+      // 서버에서 직접 집계합니다(Admin SDK는 이 규칙 자체를 거치지 않으므로
+      // 별도 예외가 필요 없습니다).
+      allow write: if isAdmin();
+    }
+
+    // 6. 수강생 계정('students') - 자료실 이용을 위한 회원가입/승인 정보
+    // 누구나 회원가입(create)은 가능하지만 status는 반드시 '승인대기'로만
+    // 시작할 수 있습니다(가입 시 스스로 '승인됨'으로 만들 수 없도록 방지).
+    // 본인 문서는 본인이 읽을 수 있고, 관리자는 전체 조회/승인(update) 가능합니다.
+    // 승인 상태 변경(update)은 관리자만 가능해 수강생 스스로 승인 처리할 수 없습니다.
+    match /students/{uid} {
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.status == '승인대기'
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.phone is string
+        // 010-9079-1234, 033-433-1926처럼 하이픈 포함, 끝자리까지 온전히
+        // 입력된 형식만 허용합니다. 프론트엔드 검증을 우회해도 서버(Firestore)
+        // 단에서 한 번 더 막습니다.
+        && request.resource.data.phone.matches('^0[0-9]{1,2}-[0-9]{3,4}-[0-9]{4}$')
+        && request.resource.data.email is string;
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // 7. 전화번호 중복 가입 방지('phoneRegistry') - 문서 ID가 정규화된
+    // 전화번호(숫자만) 자체입니다. 로그인 전에는 중복 여부를 미리 조회할 수
+    // 없도록 읽기를 제한하고, 실제 중복 방지는 create/update/delete 규칙으로
+    // 처리합니다. 회원가입 코드가 조회 실패를 안전하게 처리한 뒤 로그인 후
+    // 자신의 UID로 create를 시도하므로, 기존 번호가 있으면 두 번째 가입은
+    // create 권한을 통과하지 못합니다.
+    match /phoneRegistry/{phoneId} {
+      allow read: if isAdmin()
+        || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid;
+      // 본인 삭제는 "회원가입이 중간에 실패했을 때 롤백"하는 경우로만
+      // 제한합니다. 아래 조건은 students/{uid} 문서가 아직 없을 때만
+      // true가 되는데, 정상적으로 가입이 끝나면 studentAuth.ts가 바로 이
+      // students 문서를 만들기 때문에, 가입을 완료한 학생은 이 조건을
+      // 더 이상 만족시킬 수 없어 본인 전화번호 등록을 스스로 지울 수
+      // 없습니다. (예전에는 이 조건 없이 본인이면 언제나 삭제할 수 있어서,
+      // 이미 가입된 학생이 자기 phoneRegistry를 지우고 같은 번호로 새
+      // 계정을 또 만들 수 있는 우회 경로가 있었습니다 - 2026-08 수정.)
+      allow delete: if isAdmin()
+        || (request.auth != null && resource.data.uid == request.auth.uid
+            && !exists(/databases/$(database)/documents/students/$(request.auth.uid)));
+      allow update: if isAdmin();
+    }
+
+    // 8. 클라이언트 오류 리포트('errorLogs') - 방문자 브라우저에서 발생한
+    // 실제 런타임 오류를 자동으로 수집합니다(2026-08 모니터링 추가).
+    // 누구나(로그인 안 한 일반 방문자 포함) 오류를 생성(create)할 수 있어야
+    // 실제 방문자 화면에서 난 문제를 잡을 수 있지만, 조회/삭제는 관리자만
+    // 가능합니다. 필드 화이트리스트·길이 제한으로 악의적이거나 비정상적으로
+    // 큰 payload가 들어오는 것을 막습니다. 한 번 기록된 로그는 수정할 수
+    // 없고(update 금지) 읽기/삭제만 가능해, 기록의 신뢰성을 유지합니다.
+    match /errorLogs/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['message', 'stack', 'url', 'userAgent', 'context', 'createdAt'])
+        && request.resource.data.keys().hasAll(['message', 'url', 'createdAt'])
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0 && request.resource.data.message.size() < 2000
+        && (!request.resource.data.keys().hasAny(['stack']) || (request.resource.data.stack is string && request.resource.data.stack.size() < 4000))
+        && request.resource.data.url is string
+        && request.resource.data.url.size() < 500
+        && (!request.resource.data.keys().hasAny(['userAgent']) || (request.resource.data.userAgent is string && request.resource.data.userAgent.size() < 500))
+        && (!request.resource.data.keys().hasAny(['context']) || (request.resource.data.context is string && request.resource.data.context.size() < 200))
+        && request.resource.data.createdAt is string;
+      allow read, delete: if isAdmin();
+      allow update: if false;
     }
 
   }

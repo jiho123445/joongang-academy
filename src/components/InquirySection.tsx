@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ConsultationForm } from '../types';
+import { ConsultationForm, Course } from '../types';
 import { COURSES_DATA, ACADEMY_INFO } from '../data/coursesData';
 import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, Sparkles, FileSpreadsheet, RotateCcw } from 'lucide-react';
-import { submitApplicationToFirestore, formatReceiptNumber } from '../lib/firestoreService';
+import { submitApplicationToFirestore, formatReceiptNumber, subscribeCoursesFromFirestore } from '../lib/firestoreService';
+import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 
 interface InquirySectionProps {
   preselectedCourse?: string;
@@ -11,6 +12,17 @@ interface InquirySectionProps {
 }
 
 export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCourse, onOpenAdminModal, pendingInquiryCount = 0 }) => {
+  const [courses, setCourses] = useState<Course[]>(COURSES_DATA);
+
+  useEffect(() => {
+    const unsubscribe = subscribeCoursesFromFirestore((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setCourses(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const getInitialForm = (courseOverride?: string): ConsultationForm => ({
     name: '',
     phone: '',
@@ -25,6 +37,15 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 개인정보 수집·이용 동의
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+
+  // Spam protection: honeypot field (bots tend to fill every input; humans never see or fill this)
+  const [honeypot, setHoneypot] = useState('');
+  // Spam protection: form-render timestamp. Bots that submit within ~2 seconds of page load are blocked.
+  const formOpenedAtRef = React.useRef<number>(Date.now());
+
   useEffect(() => {
     if (preselectedCourse) {
       setFormData((prev) => ({ ...prev, courseInterest: preselectedCourse }));
@@ -34,6 +55,9 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
   const handleResetForm = () => {
     setFormData(getInitialForm());
     setStatusMessage(null);
+    setHoneypot('');
+    setPrivacyConsent(false);
+    formOpenedAtRef.current = Date.now();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,6 +65,42 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
 
     if (!formData.name.trim() || !formData.phone.trim()) {
       setStatusMessage({ type: 'error', text: '성함과 연락처(전화번호)를 정확히 입력해 주세요.' });
+      return;
+    }
+
+    if (!privacyConsent) {
+      setStatusMessage({ type: 'error', text: '개인정보 수집·이용에 동의해 주셔야 신청이 가능합니다.' });
+      return;
+    }
+
+    // Basic Korean phone number format check (mobile 010-xxxx-xxxx or landline formats).
+    // Accepts digits with optional hyphens/spaces, 9~11 digits total.
+    const digitsOnly = formData.phone.replace(/[^0-9]/g, '');
+    if (digitsOnly.length < 9 || digitsOnly.length > 11) {
+      setStatusMessage({ type: 'error', text: '연락처(전화번호) 형식을 다시 확인해 주세요. (예: 010-1234-5678)' });
+      return;
+    }
+
+    // Honeypot check: a real visitor never fills this hidden field, so any value means a bot.
+    if (honeypot.trim().length > 0) {
+      console.warn('Spam submission blocked (honeypot triggered).');
+      setStatusMessage({
+        type: 'success',
+        text: `${formData.name.trim()}님의 수강 신청이 성공적으로 접수되었습니다! 빠르게 확인 후 안내 연락을 드리겠습니다.`,
+      });
+      setFormData(getInitialForm());
+      setHoneypot('');
+      return;
+    }
+
+    // Time-trap check: legitimate users take at least a couple of seconds to fill out the form.
+    const elapsedMs = Date.now() - formOpenedAtRef.current;
+    if (elapsedMs < 1500) {
+      console.warn('Spam submission blocked (submitted too quickly).');
+      setStatusMessage({
+        type: 'error',
+        text: '입력 확인 중입니다. 잠시 후 다시 시도해 주세요.',
+      });
       return;
     }
 
@@ -55,6 +115,9 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
       
       // Reset form input values completely for the next inquiry
       setFormData(getInitialForm());
+      setHoneypot('');
+      setPrivacyConsent(false);
+      formOpenedAtRef.current = Date.now();
 
       setStatusMessage({
         type: 'success',
@@ -176,7 +239,25 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              
+
+              {/* Honeypot field: hidden from real users via CSS, but bots that auto-fill every
+                  field will populate it. Kept out of the tab order and screen readers. */}
+              <div
+                aria-hidden="true"
+                style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', overflow: 'hidden' }}
+              >
+                <label htmlFor="website">웹사이트 (작성하지 마세요)</label>
+                <input
+                  id="website"
+                  name="website"
+                  type="text"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={honeypot}
+                  onChange={(e) => setHoneypot(e.target.value)}
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Name */}
                 <div>
@@ -221,7 +302,7 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
                   onChange={(e) => setFormData({ ...formData, courseInterest: e.target.value })}
                   className="w-full p-3.5 rounded-2xl bg-white/80 backdrop-blur-sm border border-slate-200/80 text-xs sm:text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none shadow-sm"
                 >
-                  {COURSES_DATA.map((c) => (
+                  {courses.map((c) => (
                     <option key={c.id} value={c.title}>
                       [{c.category}] {c.title}
                     </option>
@@ -304,6 +385,30 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
                 />
               </div>
 
+              {/* Privacy Consent Checkbox */}
+              <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/80">
+                <input
+                  type="checkbox"
+                  id="privacy-consent"
+                  checked={privacyConsent}
+                  onChange={(e) => setPrivacyConsent(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer shrink-0"
+                />
+                <label htmlFor="privacy-consent" className="text-xs text-slate-600 leading-relaxed cursor-pointer">
+                  (필수) 수강 상담을 위한 개인정보(성함, 연락처) 수집·이용에 동의합니다.{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsPrivacyModalOpen(true);
+                    }}
+                    className="text-blue-600 font-bold underline underline-offset-2 hover:text-blue-700"
+                  >
+                    자세히 보기
+                  </button>
+                </label>
+              </div>
+
               {statusMessage && (
                 <div
                   className={`p-4 rounded-2xl text-xs sm:text-sm font-semibold flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
@@ -347,6 +452,8 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
         </div>
 
       </div>
+
+      <PrivacyPolicyModal isOpen={isPrivacyModalOpen} onClose={() => setIsPrivacyModalOpen(false)} />
     </section>
   );
 };

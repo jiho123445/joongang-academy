@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Course } from '../types';
 import { COURSES_DATA } from '../data/coursesData';
+import { subscribeCoursesFromFirestore } from '../lib/firestoreService';
 import { Search, Award, Clock, Users, Calendar, CheckCircle2, ChevronRight, Info, Sparkles, Filter } from 'lucide-react';
 
 interface CourseExplorerProps {
@@ -8,6 +9,10 @@ interface CourseExplorerProps {
   onSelectCategory: (category: string) => void;
   onOpenDetailModal: (course: Course) => void;
   onSelectCourseForInquiry: (courseTitle: string) => void;
+  // /courses/:id로 직접 들어온 경우(카카오톡 공유, 검색 결과 클릭 등)
+  // Firestore에서 강좌 목록을 불러온 뒤 해당 id의 강좌를 자동으로 열어줍니다.
+  initialCourseId?: string | null;
+  onInitialCourseResolved?: () => void;
 }
 
 export const CourseExplorer: React.FC<CourseExplorerProps> = ({
@@ -15,12 +20,35 @@ export const CourseExplorer: React.FC<CourseExplorerProps> = ({
   onSelectCategory,
   onOpenDetailModal,
   onSelectCourseForInquiry,
+  initialCourseId,
+  onInitialCourseResolved,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [courses, setCourses] = useState<Course[]>(COURSES_DATA);
+
+  useEffect(() => {
+    const unsubscribe = subscribeCoursesFromFirestore((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setCourses(data);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 강좌 목록이 로드된 뒤, URL에 강좌 id가 들어있으면(딥링크) 해당
+  // 강좌의 상세 모달을 자동으로 열어줍니다.
+  useEffect(() => {
+    if (!initialCourseId) return;
+    const found = courses.find((c) => c.id === initialCourseId);
+    if (found) {
+      onOpenDetailModal(found);
+      if (onInitialCourseResolved) onInitialCourseResolved();
+    }
+  }, [initialCourseId, courses]);
 
   const categories = ['전체', '국비지원', '자격증', '실무·기초', '코딩·AI', '학생·특강'];
 
-  const filteredCourses = COURSES_DATA.filter((course) => {
+  const filteredCourses = courses.filter((course) => {
     const matchesCategory =
       selectedCategory === '전체' || course.category === selectedCategory;
     const matchesSearch =

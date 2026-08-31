@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Bot, X, Send, Sparkles, User, RefreshCw, Phone } from 'lucide-react';
 import { ACADEMY_INFO } from '../data/coursesData';
+import { useModalA11y } from '../lib/useModalA11y';
 
 interface AiConsultantModalProps {
   isOpen: boolean;
@@ -26,6 +27,8 @@ export const AiConsultantModal: React.FC<AiConsultantModalProps> = ({
   const [inputQuery, setInputQuery] = useState('');
   const [userCategory, setUserCategory] = useState('취업준비생');
   const [isLoading, setIsLoading] = useState(false);
+
+  const panelRef = useModalA11y(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -82,8 +85,19 @@ export const AiConsultantModal: React.FC<AiConsultantModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-md animate-fadeIn">
-      <div className="bg-white/90 backdrop-blur-2xl rounded-3xl max-w-lg w-full h-[85vh] max-h-[650px] flex flex-col shadow-2xl border border-white/80 overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-md animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-consultant-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white/90 backdrop-blur-2xl rounded-3xl max-w-lg w-full h-[85vh] max-h-[650px] flex flex-col shadow-2xl border border-white/80 overflow-hidden"
+      >
         
         {/* Modal Header */}
         <div className="bg-slate-900/90 backdrop-blur-md text-white p-4 sm:p-5 flex items-center justify-between border-b border-white/10">
@@ -92,7 +106,7 @@ export const AiConsultantModal: React.FC<AiConsultantModalProps> = ({
               <Bot className="w-6 h-6 text-blue-100" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base sm:text-lg flex items-center gap-1.5">
+              <h3 id="ai-consultant-title" className="font-extrabold text-base sm:text-lg flex items-center gap-1.5">
                 <span>AI 수강 상담 선생님</span>
                 <span className="text-[10px] bg-emerald-500 text-white font-bold px-2 py-0.5 rounded-full">
                   Gemini AI

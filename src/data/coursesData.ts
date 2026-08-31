@@ -12,7 +12,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '오전반(10:00~12:00) / 오후반(14:00~16:00) / 야간반(19:00~21:00)',
     nationalSupport: true,
     subsidyRate: '최대 100% 국비지원',
-    tuition: 320000,
+    tuition: '320000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['컴퓨터활용능력 1급', '컴퓨터활용능력 2급'],
     curriculum: [
@@ -35,7 +35,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '월~금 매일 2시간 (주간반 / 야간반 선택 가능)',
     nationalSupport: true,
     subsidyRate: '100% 전액지원 ~ 최대 85%',
-    tuition: 450000,
+    tuition: '450000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['ITQ 한글', 'ITQ 엑셀', 'ITQ 파워포인트'],
     curriculum: [
@@ -57,7 +57,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '월/수/금 또는 화/목/토 (오후/야간반)',
     nationalSupport: true,
     subsidyRate: '국비지원 최대 80%',
-    tuition: 380000,
+    tuition: '380000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['전산회계 1급', '전산회계 2급', '전산세무 2급'],
     curriculum: [
@@ -80,7 +80,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '화/목 야간반 (19:00~21:30) / 주말반 (토 10:00~14:00)',
     nationalSupport: true,
     subsidyRate: '국비지원 50%~80%',
-    tuition: 400000,
+    tuition: '400000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['정보처리기능사', '정보처리산업기사', '정보처리기사'],
     curriculum: [
@@ -103,7 +103,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '월/수/금 오전반 (10:30 ~ 12:00)',
     nationalSupport: false,
     subsidyRate: '홍천군 지역 주민 할인 및 우대',
-    tuition: 150000,
+    tuition: '150000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['컴퓨터기초', '스마트폰활용'],
     curriculum: [
@@ -126,7 +126,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '월/수 야간반 (19:00~21:00) / 토요반 (10:00~13:00)',
     nationalSupport: true,
     subsidyRate: 'K-디지털 / 내일배움카드 지원',
-    tuition: 360000,
+    tuition: '360000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['파이썬입문', 'COS자격증', '생성형AI실무'],
     curriculum: [
@@ -149,7 +149,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '화/목 오후반 (14:00~16:00) / 야간반 (19:00~21:00)',
     nationalSupport: true,
     subsidyRate: '국비지원 50%~80%',
-    tuition: 300000,
+    tuition: '300000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['GTQ 포토샵 1급/2급', 'GTQi 일러스트'],
     curriculum: [
@@ -171,7 +171,7 @@ export const COURSES_DATA: Course[] = [
     schedule: '토요일 (10:00~12:00 / 13:00~15:00)',
     nationalSupport: false,
     subsidyRate: '형제/자매 수강 할인 10%',
-    tuition: 200000,
+    tuition: '200000',
     selfPayEstimate: '카드 유형별 상이',
     certificationTags: ['COS Pro', 'ITQ 학생', '정보올림피아드'],
     curriculum: [
@@ -251,7 +251,7 @@ export const ACADEMY_INFO = {
   name: '홍천 중앙정보처리학원',
   englishName: 'Jungang Information Processing Computer Institute',
   foundedYear: 1999,
-  slogan: '25년 전통의 홍천 대표 IT·컴퓨터 전문 교육기관',
+  slogan: '27년 전통의 홍천 대표 IT·컴퓨터 전문 교육기관',
   director: '홍천 중앙정보처리학원 원장',
   address: '강원도 홍천군 홍천읍 신장대로 48, 2층',
   phone: '033-433-1926~7',
@@ -259,10 +259,10 @@ export const ACADEMY_INFO = {
   fax: '033-433-1928',
   email: 'jiho1234@hanmail.net',
   businessHours: '평일 09:00 - 21:30 | 토요일 09:00 - 15:00 | 일요일/공휴일 휴무',
-  domain: 'http://jahrd.com/',
+  domain: 'https://jahrd.co.kr/',
   busInfo: '홍천시외버스터미널 도보 5분 / 중앙약국 맞은편 하차',
   features: [
-    { title: '1999년 설립 전통', desc: '25년 이상 축적된 깊은 교육 노하우와 지역 사회 신뢰' },
+    { title: '1999년 설립 전통', desc: '27년 이상 축적된 깊은 교육 노하우와 지역 사회 신뢰' },
     { title: '국민내일배움카드 지정', desc: '고용노동부 인정 국비지원 지정 훈련기관 (최대 100% 지원)' },
     { title: '1인 1대 최신 PC 환경', desc: '시험장과 동일한 최고 사양 컴퓨터 및 인체공학 좌석' },
     { title: '1:1 밀착 소수정예', desc: '개인별 학습 속도에 맞춘 꼼꼼한 실무 중심 맞춤형 지도' },
@@ -270,3 +270,12 @@ export const ACADEMY_INFO = {
     { title: '취업 및 사후관리', desc: '이력서/자기소개서 교정 및 홍천지역 협력업체 취업 연계' }
   ]
 };
+
+// 자료실 - 과정별 분류 목록 ('공통'은 특정 과정에 한정되지 않는 일반 서식용)
+export const MATERIAL_COURSE_CATEGORIES: string[] = [
+  '공통',
+  ...COURSES_DATA.map((c) => c.title),
+];
+
+// 자료실 - 자료 유형 목록
+export const MATERIAL_TYPES = ['학원서식', '예제서식', '채점프로그램'] as const;

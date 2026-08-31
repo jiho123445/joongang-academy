@@ -1,5 +1,6 @@
 import React from 'react';
 import { Calendar, Sparkles, X, ChevronRight, CheckCircle2, Megaphone, Clock, BookOpen } from 'lucide-react';
+import { useModalA11y } from '../lib/useModalA11y';
 
 export interface ScheduleItem {
   courseName: string;
@@ -16,6 +17,10 @@ export interface PopupNoticeConfig {
   dateText: string;
   schedules?: ScheduleItem[];
   actionText: string;
+  /** 우측 하단 "공지 다시보기" 플로팅 버튼에 표시되는 짧은 문구.
+   *  비워두면(=falsy) 상단 뱃지 문구(badgeText)를 그대로 사용해
+   *  팝업 뱃지 문구가 바뀌면 플로팅 버튼 문구도 함께 바뀐다. */
+  buttonLabel?: string;
   updatedAt?: string;
 }
 
@@ -34,17 +39,29 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
   onActionClick,
   onHideToday,
 }) => {
-  if (!isOpen || !noticeConfig || !noticeConfig.enabled) return null;
+  const shouldShow = isOpen && !!noticeConfig && noticeConfig.enabled;
+  const panelRef = useModalA11y(shouldShow, onClose);
+
+  if (!shouldShow) return null;
 
   const schedules = noticeConfig.schedules && noticeConfig.schedules.length > 0
     ? noticeConfig.schedules
     : [];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
       {/* Modal Card */}
       <div 
         id="notice-popup-card"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notice-popup-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col transform transition-all animate-scale-up max-h-[90vh]"
       >
         {/* Header Visual Banner */}
@@ -71,7 +88,7 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
           </div>
 
           {/* Main Title & Subtitle */}
-          <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white leading-snug mb-1 relative z-10">
+          <h2 id="notice-popup-title" className="text-xl sm:text-2xl font-black tracking-tight text-white leading-snug mb-1 relative z-10">
             {noticeConfig.title}
           </h2>
           {noticeConfig.subtitle && (
@@ -155,7 +172,7 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
             </div>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>홍천읍 신장대로 48 위치 (접근성 우수, 25년 전통)</span>
+              <span>홍천읍 신장대로 48 위치 (접근성 우수, 27년 전통)</span>
             </div>
           </div>
 

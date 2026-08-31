@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Course } from './types';
 import { Header } from './components/Header';
 import { HeroSection } from './components/HeroSection';
@@ -11,9 +11,10 @@ import { AcademyIntro } from './components/AcademyIntro';
 import { NoticeBoard } from './components/NoticeBoard';
 import { FaqSection } from './components/FaqSection';
 import { InquirySection } from './components/InquirySection';
-import { InquiryAdminModal } from './components/InquiryAdminModal';
 import { NoticePopupModal, PopupNoticeConfig } from './components/NoticePopupModal';
 import { LocationSection } from './components/LocationSection';
+import { MaterialsSection } from './components/MaterialsSection';
+import { StudentAuthGate } from './components/StudentAuthGate';
 import { Footer } from './components/Footer';
 import { AiConsultantModal } from './components/AiConsultantModal';
 import { MobileQuickBar } from './components/MobileQuickBar';
@@ -23,14 +24,33 @@ import {
   subscribeOpeningPopupFromFirestore,
   DEFAULT_OPENING_POPUP,
 } from './lib/firestoreService';
+import { onAdminAuthStateChanged } from './lib/adminAuth';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './lib/firebase';
+import { trackPageView } from './lib/analytics';
+import { updatePageMeta } from './lib/seo';
+
+// InquiryAdminModal은 엑셀 내보내기 라이브러리(exceljs)를 포함해 코드량이 커서
+// (수강생 등 일반 방문자는 절대 열지 않는 화면인데도) 즉시 로드하면 모든 방문자가
+// 이 무거운 코드를 다운로드하게 됩니다. React.lazy로 분리해, 원장님이 실제로
+// "관리자 모드" 버튼을 눌렀을 때만 해당 코드가 내려받아지도록 했습니다.
+const InquiryAdminModal = lazy(() =>
+  import('./components/InquiryAdminModal').then((mod) => ({ default: mod.InquiryAdminModal }))
+);
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<string>('home');
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
   const [selectedCourseForModal, setSelectedCourseForModal] = useState<Course | null>(null);
+  const [initialCourseIdFromUrl, setInitialCourseIdFromUrl] = useState<string | null>(null);
+  const [selectedNoticeId, setSelectedNoticeId] = useState<string | null>(null);
   const [preselectedCourseForInquiry, setPreselectedCourseForInquiry] = useState<string>('');
   const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  // 관리자 모달을 한 번이라도 열었는지 - lazy 컴포넌트를 처음 열 때만 마운트하고
+  // 이후로는 계속 마운트된 상태로 두어(isOpen=false로 숨기기만) 다시 열 때
+  // 매번 다시 로드/리렌더링되지 않게 합니다.
+  const [hasOpenedAdminModal, setHasOpenedAdminModal] = useState<boolean>(false);
 
   // Opening Notice Popup State
   const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig | null>(DEFAULT_OPENING_POPUP);
@@ -39,14 +59,42 @@ export default function App() {
   // Pending Inquiries Count State for Admin Red Indicator
   const [pendingInquiryCount, setPendingInquiryCount] = useState<number>(0);
 
-  // Real-time Firestore Subscription for Applications Pending Count
+  // 관리자 로그인 여부 추적 (Firebase Auth 세션이 남아있으면 새로고침해도 유지됨)
+  // 수강생도 같은 Firebase Auth를 공유하므로, 단순 로그인 여부가 아니라
+  // admins 컬렉션에 실제로 등록된 계정인지까지 확인합니다.
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
+
   useEffect(() => {
+    const unsubAuth = onAdminAuthStateChanged(async (user) => {
+      if (!user) {
+        setIsAdminAuthenticated(false);
+        return;
+      }
+      try {
+        const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+        setIsAdminAuthenticated(adminDoc.exists());
+      } catch {
+        setIsAdminAuthenticated(false);
+      }
+    });
+    return () => unsubAuth();
+  }, []);
+
+  // Real-time Firestore Subscription for Applications Pending Count
+  // applications 컬렉션은 Firestore 규칙상 관리자만 읽을 수 있으므로,
+  // 일반 방문자에게는 이 구독을 아예 시도하지 않습니다. (예전에는 모든 방문자가
+  // 접근할 때마다 조회를 시도해 매번 권한 오류가 발생했었습니다.)
+  useEffect(() => {
+    if (!isAdminAuthenticated) {
+      setPendingInquiryCount(0);
+      return;
+    }
     const unsubscribe = subscribeApplicationsFromFirestore((records) => {
       const pending = records.filter((r) => r.status === '상담대기' || !r.status).length;
       setPendingInquiryCount(pending);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isAdminAuthenticated]);
 
   // Real-time Firestore Subscription for Opening Popup (`settings/opening_popup`)
   useEffect(() => {
@@ -61,13 +109,14 @@ export default function App() {
       }
 
       const todayStr = new Date().toISOString().slice(0, 10);
-      const isKakaoOrExternal =
-        window.location.search.includes('kakao') ||
-        window.location.search.includes('utm_') ||
-        navigator.userAgent.toLowerCase().includes('kakaotalk') ||
-        window.location.hash.includes('notice');
 
-      if (cfg.enabled && (isKakaoOrExternal || hiddenDate !== todayStr)) {
+      // "오늘 하루 동안 보지 않기"를 누른 경우, 카카오톡/외부 유입 등
+      // 어떤 경로로 들어와도 오늘 하루는 절대 다시 뜨지 않아야 합니다.
+      // (예전에는 카카오톡 인앱 브라우저나 '#notices' 공지 페이지로 들어오면
+      // hiddenDate와 무관하게 무조건 다시 열려서, 하루 안 보기를 눌러도
+      // 팝업이 계속 다시 떴습니다.)
+      const hiddenToday = hiddenDate === todayStr;
+      if (cfg.enabled && !hiddenToday) {
         setIsNoticePopupOpen(true);
       }
     });
@@ -98,30 +147,155 @@ export default function App() {
     setIsNoticePopupOpen(false);
   };
 
-  // Sync state with URL hash for true multi-page navigation experience
+  // Sync state with URL path for true multi-page navigation experience (해시 없는 실제 경로)
+  // 예전에는 window.location.hash를 썼는데, 구글/네이버 검색 노출과 SEO에는
+  // #이 붙지 않는 경로 기반 URL(/courses, /notices 등)이 훨씬 유리합니다.
+  // 재단 홈페이지(nbnhappy.or.kr)와 동일한 방식: 공지·강좌 하나하나(/notices/:id,
+  // /courses/:id)까지 실제 URL을 갖도록 확장하고, 예전 #해시 링크도 자동으로
+  // 새 경로로 옮겨줍니다.
+  const VALID_SECTIONS = ['courses', 'national-support', 'intro', 'notices', 'inquiry', 'location', 'materials', 'home'];
+
+  const buildPath = (section: string, itemId?: string | null): string => {
+    const normalized = section === 'hero' ? 'home' : section;
+    if ((normalized === 'notices' || normalized === 'courses') && itemId) {
+      return `/${normalized}/${encodeURIComponent(itemId)}`;
+    }
+    return normalized === 'home' ? '/' : `/${normalized}`;
+  };
+
+  const parsePathToState = (pathname: string): { section: string; noticeId: string | null; courseId: string | null } => {
+    const raw = pathname.replace(/^\/+/, '').replace(/\/+$/, '').trim();
+    if (!raw) return { section: 'home', noticeId: null, courseId: null };
+
+    const noticeMatch = raw.match(/^notices\/([^/]+)$/);
+    if (noticeMatch) {
+      return { section: 'notices', noticeId: decodeURIComponent(noticeMatch[1]), courseId: null };
+    }
+    const courseMatch = raw.match(/^courses\/([^/]+)$/);
+    if (courseMatch) {
+      return { section: 'courses', noticeId: null, courseId: decodeURIComponent(courseMatch[1]) };
+    }
+
+    return { section: VALID_SECTIONS.includes(raw) ? raw : 'home', noticeId: null, courseId: null };
+  };
+
+  // 예전에 카카오톡/문자/검색엔진에 이미 공유·색인된 #courses, #notices 같은
+  // 구식 해시 링크가 있으면, 페이지가 처음 열릴 때 자동으로 새 경로(/courses,
+  // /notices)로 바꿔줍니다(replaceState라 뒤로가기 히스토리를 늘리지 않음).
+  // 이렇게 하지 않으면 예전 링크를 통해 들어온 방문자는 전부 그냥 홈으로
+  // 떨어지게 됩니다. 마운트 시 한 번만 실행됩니다.
+  const legacyHashMigratedRef = React.useRef(false);
+  if (!legacyHashMigratedRef.current && typeof window !== 'undefined' && window.location.hash) {
+    legacyHashMigratedRef.current = true;
+    const legacyRaw = window.location.hash.replace(/^#/, '').trim();
+    const legacySection = legacyRaw === 'hero' ? 'home' : legacyRaw;
+    const migratedPath = VALID_SECTIONS.includes(legacySection) ? buildPath(legacySection) : null;
+    if (migratedPath) {
+      window.history.replaceState(null, '', migratedPath);
+    } else {
+      // 알 수 없는 해시는 그냥 지워서 주소창에 남지 않게 합니다.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }
+
   useEffect(() => {
-    const parseHash = () => {
-      const raw = window.location.hash.replace('#', '').trim();
-      if (
-        raw &&
-        ['courses', 'national-support', 'intro', 'notices', 'inquiry', 'location', 'home'].includes(raw)
-      ) {
-        setActiveSection(raw);
-      } else if (raw === 'hero') {
-        setActiveSection('home');
+    const parsePath = () => {
+      const { section, noticeId, courseId } = parsePathToState(window.location.pathname);
+      setActiveSection(section);
+      setSelectedNoticeId(noticeId);
+      setInitialCourseIdFromUrl(courseId);
+      if (!courseId) {
+        setSelectedCourseForModal(null);
       }
     };
 
-    parseHash();
-    window.addEventListener('hashchange', parseHash);
-    return () => window.removeEventListener('hashchange', parseHash);
+    parsePath();
+    // 뒤로가기/앞으로가기(브라우저 히스토리 이동) 시에도 동일하게 반영
+    window.addEventListener('popstate', parsePath);
+    return () => window.removeEventListener('popstate', parsePath);
   }, []);
+
+  // 섹션(페이지)별 <title>/description — PageHeader에 실제로 표시되는
+  // 문구와 동일하게 맞춰서, 브라우저 탭 제목과 검색엔진에 보이는 제목이
+  // 화면 내용과 일치하도록 합니다.
+  // ⚠️ home 항목은 index.html의 <title>/<meta name="description">과 반드시
+  // 동일하게 유지해야 합니다. 이 SPA는 페이지가 열리면(아래 useEffect) 이 값으로
+  // index.html의 정적 태그를 곧바로 덮어쓰기 때문에, 둘이 다르면 방문 직후
+  // index.html에 적어둔 값이 순식간에 이 값으로 되돌아가 버립니다(실제로 이
+  // 문제가 있었습니다: index.html만 "홍천컴퓨터학원" 문구로 고쳤는데 여기는
+  // 그대로 둬서, 실제 방문자·JS를 실행하는 검색엔진에게는 옛날 문구가 계속
+  // 보였습니다). index.html을 고칠 때는 항상 이 home 항목도 같이 고쳐주세요.
+  const SECTION_META: Record<string, { title: string; description: string }> = {
+    home: {
+      title: '홍천컴퓨터학원 | 홍천 중앙정보처리학원 | 국비지원 컴퓨터·IT 교육',
+      description: '홍천컴퓨터학원 - 국비지원 컴퓨터활용능력, 전산세무회계, 시니어·파이썬&AI 교육을 제공하는 중앙정보처리학원입니다.',
+    },
+    courses: {
+      title: '전체 교육과정',
+      description: '컴퓨터활용능력, 전산세무회계, 시니어/어르신 기초, 파이썬&AI 등 1:1 맞춤형 실습 교육과정을 안내합니다.',
+    },
+    'national-support': {
+      title: '국민내일배움카드 국비지원 안내',
+      description: '고용노동부 지원 혜택, 신청 자격 요건, 발급 절차 및 HRD-Net 가이드를 안내합니다.',
+    },
+    intro: {
+      title: '학원 소개 & 원장 인사말',
+      description: '1999년 설립 이래 홍천 지역 사회와 함께해온 IT·컴퓨터 전문 교육기관, 홍천 중앙정보처리학원을 소개합니다.',
+    },
+    notices: {
+      title: '공지사항 & 자격증 시험일정',
+      description: '모집 일정, 검정 시험 일정 안내 및 자주 묻는 질문(FAQ)을 안내합니다.',
+    },
+    inquiry: {
+      title: '온라인 수강 문의',
+      description: '1분 간편 문의 작성 또는 전화 상담 신청을 받아보세요.',
+    },
+    location: {
+      title: '오시는 길 & 위치 안내',
+      description: '강원도 홍천군 홍천읍 신장대로 48, 2층 (홍천여고 인근 중앙약국 맞은편)에 위치해 있습니다.',
+    },
+    materials: {
+      title: '자료실',
+      description: '서식, 과정별 예제 파일, 채점프로그램을 다운로드하실 수 있습니다.',
+    },
+  };
+
+  useEffect(() => {
+    // 강좌 상세가 열려 있으면 그 강좌 이름/요약으로 더 구체적인 제목을 씁니다.
+    if (selectedCourseForModal) {
+      updatePageMeta({
+        title: selectedCourseForModal.title,
+        description: selectedCourseForModal.summary || selectedCourseForModal.description || SECTION_META.courses.description,
+        path: `/courses/${selectedCourseForModal.id}`,
+        isDetail: true,
+      });
+      return;
+    }
+
+    const meta = SECTION_META[activeSection] || SECTION_META.home;
+    const path = activeSection === 'home' ? '/' : `/${activeSection}`;
+    const isHome = activeSection === 'home' || activeSection === 'hero';
+    updatePageMeta({ title: meta.title, description: meta.description, path, titleIsFull: isHome });
+    // selectedNoticeId가 있을 때(공지 상세)는 NoticeBoard가 공지 내용을
+    // 불러온 뒤 이 기본값을 더 구체적인 제목으로 다시 덮어씁니다.
+  }, [activeSection, selectedCourseForModal]);
 
   const handleNavigate = (pageId: string) => {
     const targetPage = pageId === 'hero' ? 'home' : pageId;
     setActiveSection(targetPage);
-    window.location.hash = targetPage;
+    setSelectedNoticeId(null);
+    setInitialCourseIdFromUrl(null);
+    setSelectedCourseForModal(null);
+    const targetPath = buildPath(targetPage);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    // GA4에는 실제로 바뀐 주소(targetPath)를 그대로 보냅니다 — 예전엔
+    // 여기서 항상 "/#섹션명" 형태로 고정해서 보내는 바람에, 라우팅을
+    // #해시에서 경로 기반으로 바꾼 뒤에도 애널리틱스 리포트에는 계속
+    // 옛날 #주소로 기록되는 불일치가 있었습니다.
+    trackPageView(targetPath, targetPage);
 
     // Open opening notice popup modal when Home button/logo is clicked
     if (pageId === 'home' || pageId === 'hero') {
@@ -129,9 +303,60 @@ export default function App() {
     }
   };
 
+  // 공지사항 하나를 열람할 때 실제 URL(/notices/:id)을 부여합니다.
+  // 이렇게 해야 카카오톡/문자로 공유하거나 구글·네이버 검색 결과에
+  // 개별 공지가 노출될 수 있습니다(예전에는 팝업일 뿐 URL이 안 바뀌어서
+  // 항상 /notices 목록 주소만 공유/색인됐습니다).
+  const handleViewNotice = (noticeId: string) => {
+    setActiveSection('notices');
+    setSelectedNoticeId(noticeId);
+    const targetPath = buildPath('notices', noticeId);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    trackPageView(targetPath, `공지사항 상세 (${noticeId})`);
+  };
+
+  const handleCloseNoticeDetail = () => {
+    setSelectedNoticeId(null);
+    const targetPath = buildPath('notices');
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    trackPageView(targetPath, 'notices');
+  };
+
+  // 강좌 하나를 열람할 때도 공지사항과 동일하게 실제 URL(/courses/:id)을
+  // 부여합니다. CourseExplorer 카드를 클릭했을 때(onOpenDetailModal)와
+  // /courses/:id로 직접 딥링크로 들어왔을 때(CourseExplorer의
+  // initialCourseId 해석 완료 시) 모두 이 함수를 거칩니다.
+  const handleOpenCourseDetail = (course: Course) => {
+    setSelectedCourseForModal(course);
+    const targetPath = buildPath('courses', course.id);
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    trackPageView(targetPath, `강좌 상세 (${course.title})`);
+  };
+
+  const handleCloseCourseDetail = () => {
+    setSelectedCourseForModal(null);
+    setInitialCourseIdFromUrl(null);
+    const targetPath = buildPath('courses');
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
+    trackPageView(targetPath, 'courses');
+  };
+
   const handleSelectCourseForInquiry = (courseTitle: string) => {
     setPreselectedCourseForInquiry(courseTitle);
     handleNavigate('inquiry');
+  };
+
+  const handleOpenAdminModal = () => {
+    setHasOpenedAdminModal(true);
+    setIsAdminModalOpen(true);
   };
 
   return (
@@ -142,7 +367,7 @@ export default function App() {
         activeSection={activeSection}
         onNavigate={handleNavigate}
         onOpenAiModal={() => setIsAiModalOpen(true)}
-        onOpenAdminModal={() => setIsAdminModalOpen(true)}
+        onOpenAdminModal={handleOpenAdminModal}
         pendingInquiryCount={pendingInquiryCount}
       />
 
@@ -177,8 +402,10 @@ export default function App() {
             <CourseExplorer
               selectedCategory={selectedCategory}
               onSelectCategory={(cat) => setSelectedCategory(cat)}
-              onOpenDetailModal={(course) => setSelectedCourseForModal(course)}
+              onOpenDetailModal={handleOpenCourseDetail}
               onSelectCourseForInquiry={handleSelectCourseForInquiry}
+              initialCourseId={initialCourseIdFromUrl}
+              onInitialCourseResolved={() => setInitialCourseIdFromUrl(null)}
             />
             {/* Page Bottom Navigation Shortcut */}
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -236,7 +463,7 @@ export default function App() {
           <div className="animate-fadeIn">
             <PageHeader
               title="학원 소개 & 원장 인사말"
-              subtitle="1969년 설립 이래 50년 넘게 홍천 지역 사회와 함께해온 최고의 컴퓨터 교육기관"
+              subtitle="1999년 설립 이래 홍천 지역 사회와 함께해온 IT·컴퓨터 전문 교육기관"
               categoryName="학원소개"
               onNavigateHome={() => handleNavigate('home')}
             />
@@ -269,7 +496,11 @@ export default function App() {
               categoryName="공지 및 FAQ"
               onNavigateHome={() => handleNavigate('home')}
             />
-            <NoticeBoard />
+            <NoticeBoard
+              selectedNoticeId={selectedNoticeId}
+              onOpenNotice={handleViewNotice}
+              onCloseDetail={handleCloseNoticeDetail}
+            />
             <div className="pt-8">
               <FaqSection />
             </div>
@@ -303,7 +534,7 @@ export default function App() {
             />
             <InquirySection
               preselectedCourse={preselectedCourseForInquiry}
-              onOpenAdminModal={() => setIsAdminModalOpen(true)}
+              onOpenAdminModal={handleOpenAdminModal}
               pendingInquiryCount={pendingInquiryCount}
             />
           </div>
@@ -322,6 +553,21 @@ export default function App() {
           </div>
         )}
 
+        {/* 9. MATERIALS (자료실) PAGE */}
+        {activeSection === 'materials' && (
+          <div className="animate-fadeIn">
+            <PageHeader
+              title="자료실"
+              subtitle="서식, 과정별 예제 파일, 채점프로그램을 다운로드하실 수 있습니다"
+              categoryName="자료실"
+              onNavigateHome={() => handleNavigate('home')}
+            />
+            <StudentAuthGate>
+              <MaterialsSection />
+            </StudentAuthGate>
+          </div>
+        )}
+
       </main>
 
       {/* Footer */}
@@ -330,10 +576,10 @@ export default function App() {
       {/* Course Detail Modal */}
       <CourseDetailModal
         course={selectedCourseForModal}
-        onClose={() => setSelectedCourseForModal(null)}
+        onClose={handleCloseCourseDetail}
         onApply={(courseTitle) => {
           handleSelectCourseForInquiry(courseTitle);
-          setSelectedCourseForModal(null);
+          handleCloseCourseDetail();
         }}
       />
 
@@ -357,13 +603,20 @@ export default function App() {
       />
 
       {/* Admin Inquiry Data Management & Notice Modal */}
-      <InquiryAdminModal
-        isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
-        onNoticeUpdated={() => {
-          setIsNoticePopupOpen(true);
-        }}
-      />
+      {/* hasOpenedAdminModal이 true가 되기 전까지는 이 코드 자체를 마운트하지 않아
+          lazy chunk를 내려받지 않습니다. 한 번 열린 뒤에는 계속 마운트해 두고
+          isOpen prop으로만 표시/숨김을 제어합니다(재오픈 시 재로딩 방지). */}
+      {hasOpenedAdminModal && (
+        <Suspense fallback={null}>
+          <InquiryAdminModal
+            isOpen={isAdminModalOpen}
+            onClose={() => setIsAdminModalOpen(false)}
+            onNoticeUpdated={() => {
+              setIsNoticePopupOpen(true);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Floating Notice Popup Button */}
       {!isNoticePopupOpen && noticeConfig && noticeConfig.enabled && (
@@ -378,7 +631,7 @@ export default function App() {
             <span className="relative inline-flex rounded-full h-3 w-3 bg-slate-950"></span>
           </span>
           <Megaphone className="w-4 h-4 text-slate-950 fill-slate-950" />
-          <span>8~9월 개강공지</span>
+          <span>{noticeConfig.buttonLabel || noticeConfig.badgeText}</span>
         </button>
       )}
 

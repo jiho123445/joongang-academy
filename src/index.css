@@ -85,7 +85,18 @@ body {
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* "forwards"를 쓰면 애니메이션이 끝난 뒤에도 transform: scale(1)이 그
+     요소에 계속 남습니다. scale(1)은 시각적으로는 "원래 크기"라 눈에 띄는
+     차이가 없어 보이지만, CSS 스펙상 transform 값이 none이 아니면(설령
+     scale(1)이어도) 그 요소가 자신의 하위에 있는 position:fixed 요소들의
+     기준점이 되어 버립니다. 모든 페이지 섹션이 이 클래스로 감싸져 있고
+     그 안에서 공지사항 상세, 강좌 상세 같은 fixed 팝업이 열리다 보니,
+     "화면 중앙"이 아니라 "그 페이지 섹션 전체 높이의 중앙"에 떠서 스크롤
+     위치에 따라 화면 하단에 걸쳐 보이는 버그가 있었습니다. forwards를
+     빼면 애니메이션이 끝난 뒤 transform이 자동으로 none(기본값)으로
+     돌아가 이 문제가 해결됩니다 — 시각적인 페이드인 효과 자체는 동일하게
+     유지됩니다. */
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html {

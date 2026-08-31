@@ -2,15 +2,49 @@ import React, { useState, useEffect } from 'react';
 import { Notice } from '../types';
 import { Bell, Calendar, ChevronRight, X, AlertCircle } from 'lucide-react';
 import { subscribeNoticesFromFirestore } from '../lib/firestoreService';
+import { useModalA11y } from '../lib/useModalA11y';
+import { updatePageMeta } from '../lib/seo';
 
-export const NoticeBoard: React.FC = () => {
+interface NoticeBoardProps {
+  // 부모(App.tsx)가 URL(/notices/:id)과 동기화해서 관리하는 현재 열람 중인
+  // 공지 id. 이렇게 해야 개별 공지에 실제 URL이 생겨서 카카오톡/문자 공유나
+  // 구글·네이버 검색 노출이 가능해집니다(예전엔 팝업일 뿐 주소가 안 바뀌었음).
+  selectedNoticeId?: string | null;
+  onOpenNotice?: (noticeId: string) => void;
+  onCloseDetail?: () => void;
+}
+
+export const NoticeBoard: React.FC<NoticeBoardProps> = ({ selectedNoticeId, onOpenNotice, onCloseDetail }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('전체');
-  const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const selectedNotice = selectedNoticeId ? notices.find((n) => n.id === selectedNoticeId) || null : null;
+  const closeDetail = () => {
+    if (onCloseDetail) onCloseDetail();
+  };
+
+  const detailModalRef = useModalA11y(!!selectedNotice, closeDetail);
+
+  // 공지 상세를 열람 중일 때, App.tsx가 먼저 설정해둔 "공지사항" 섹션
+  // 기본 제목을, 실제 공지 제목/내용으로 더 구체적으로 덮어씁니다.
+  // (App.tsx는 공지 목록 데이터를 갖고 있지 않아서 여기서 처리합니다.)
+  useEffect(() => {
+    if (selectedNotice) {
+      const plainContent = (selectedNotice.content || '').replace(/\s+/g, ' ').trim();
+      updatePageMeta({
+        title: selectedNotice.title,
+        description: plainContent ? plainContent.slice(0, 120) : `${selectedNotice.category} 공지사항 안내`,
+        path: `/notices/${selectedNotice.id}`,
+        isDetail: true,
+      });
+    }
+  }, [selectedNotice]);
 
   useEffect(() => {
     const unsubscribe = subscribeNoticesFromFirestore((data) => {
       setNotices(data);
+      setIsLoading(false);
     });
     return () => unsubscribe();
   }, []);
@@ -58,10 +92,29 @@ export const NoticeBoard: React.FC = () => {
 
         {/* Notice List in Frosted Glass Container */}
         <div className="bg-white/50 backdrop-blur-xl rounded-3xl border border-white/60 shadow-xl overflow-hidden divide-y divide-white/60">
-          {filteredNotices.map((notice) => (
+          {isLoading ? (
+            // Skeleton loading rows - Firestore 실시간 데이터가 도착하기 전까지
+            // "공지사항이 없습니다"처럼 오해될 수 있는 빈 화면 대신 로딩 중임을 보여줍니다.
+            <div className="divide-y divide-white/60">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="p-5 sm:p-6 flex items-center gap-3 animate-pulse">
+                  <div className="h-6 w-16 rounded-full bg-slate-200/80 flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-2/3 rounded bg-slate-200/80" />
+                    <div className="h-3 w-1/3 rounded bg-slate-200/60" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredNotices.length === 0 ? (
+            <div className="p-10 text-center text-sm text-slate-500">
+              등록된 공지사항이 없습니다.
+            </div>
+          ) : (
+            filteredNotices.map((notice) => (
             <div
               key={notice.id}
-              onClick={() => setSelectedNotice(notice)}
+              onClick={() => onOpenNotice && onOpenNotice(notice.id)}
               className="p-5 sm:p-6 hover:bg-white/60 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
             >
               <div className="flex items-start sm:items-center gap-3">
@@ -98,25 +151,37 @@ export const NoticeBoard: React.FC = () => {
                 <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-transform group-hover:translate-x-1" />
               </div>
             </div>
-          ))}
+            ))
+          )}
         </div>
 
         {/* Notice Detail Modal in Glass Style */}
         {selectedNotice && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-fadeIn">
-            <div className="bg-white/90 backdrop-blur-2xl rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-white/80">
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-fadeIn"
+            onClick={() => closeDetail()}
+          >
+            <div
+              ref={detailModalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="notice-detail-title"
+              tabIndex={-1}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white/90 backdrop-blur-2xl rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-white/80"
+            >
               <div className="flex items-start justify-between border-b border-slate-200/80 pb-4 mb-4">
                 <div>
                   <span className="px-3 py-1 bg-blue-100 text-blue-800 font-bold text-xs rounded-full border border-blue-200">
                     {selectedNotice.category}
                   </span>
-                  <h3 className="text-lg font-black text-slate-900 mt-2">
+                  <h3 id="notice-detail-title" className="text-lg font-black text-slate-900 mt-2">
                     {selectedNotice.title}
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">등록일: {selectedNotice.date}</p>
                 </div>
                 <button
-                  onClick={() => setSelectedNotice(null)}
+                  onClick={() => closeDetail()}
                   className="p-2 text-slate-400 hover:text-slate-800 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -129,7 +194,7 @@ export const NoticeBoard: React.FC = () => {
 
               <div className="flex justify-end">
                 <button
-                  onClick={() => setSelectedNotice(null)}
+                  onClick={() => closeDetail()}
                   className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-full shadow-md shadow-blue-200 transition-all cursor-pointer"
                 >
                   확인

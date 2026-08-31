@@ -1,8 +1,8 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { handleAskAiRequest } from "./api/_shared/aiConsultant";
 
 dotenv.config();
 
@@ -17,52 +17,27 @@ async function startServer() {
     res.json({ status: "ok", academy: "홍천 중앙정보처리학원" });
   });
 
+  // sitemap.xml/rss.xml은 더 이상 요청마다 서버가 만들지 않습니다. 매 요청
+  // 마다 Firestore를 호출하는 서버리스 함수(예전 api/sitemap.ts) 구조는
+  // 재단 홈페이지(nbnhappy.or.kr)에서 실제로 프로덕션 중 FUNCTION_INVOCATION_
+  // FAILED로 죽은 전례가 있어, 이 사이트는 scripts/generate-static-seo.mjs가
+  // 빌드타임(vite build 직후)에 한 번 만들어 dist/sitemap.xml, dist/rss.xml로
+  // 내보내는 정적 파일 방식으로 바꿨습니다. 로컬에서 확인하려면
+  // `npm run build && npm run preview` 후 http://localhost:.../sitemap.xml
+  // 로 접속하세요(개발 모드 `npm run dev`는 dist/가 없어 정적 파일이 없습니다).
+
   // AI Course Advice Endpoint using Gemini
+  // (프로덕션/Vercel에서는 api/ask-ai.ts 서버리스 함수가 같은 로직을
+  //  api/_shared/aiConsultant.ts에서 공유해서 사용합니다.)
   app.post("/api/ask-ai", async (req, res) => {
-    try {
-      const { userQuery, userCategory, goal } = req.body;
-      const apiKey = process.env.GEMINI_API_KEY;
+    const forwardedFor = req.headers["x-forwarded-for"];
+    const clientIp =
+      (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)?.split(",")[0]?.trim() ||
+      req.socket.remoteAddress ||
+      "unknown";
 
-      if (!apiKey) {
-        return res.json({
-          reply: `안녕하세요! 홍천 중앙정보처리학원 AI 수강 도우미입니다.\n\n질문하신 내용은 원장님 또는 전문 상담 직원을 통해 친절하게 안내받으실 수 있습니다.\n\n📞 학원 전화: 033-433-1926 ~ 7\n📍 위치: 강원도 홍천군 홍천읍 신장대로 48, 2층\n\n국민내일배움카드 국비지원 과정 및 컴퓨터활용능력, 전산세무회계, 시니어 컴퓨터 등 맞춤형 상담을 진행해 드립니다.`
-        });
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = `
-너는 '홍천 중앙정보처리학원(jahrd.com, 1999년 설립, 강원도 홍천군 홍천읍 신장대로 48 2층, 전화 033-433-1926)'의 친절하고 전문적인 AI 수강 상담 선생님이야.
-
-[학원 주요 특징]
-1. 1999년 설립된 25년 전통의 홍천 대표 컴퓨터/IT 교육기관
-2. 고용노동부 지정 국민내일배움카드 국비지원 지정 학원 (수강료 최대 100% 무료 지원)
-3. 대표 과정: 컴퓨터활용능력(1급/2급), 전산세무회계, 정보처리기능사/산업기사/기사, ITQ/GTQ 자격증, 시니어/어르신 컴퓨터&스마트폰 기초, 파이썬 코딩 및 AI 활용, 초중고 방학특강
-4. 1인 1대 최신 컴퓨터 실습, 1:1 맞춤 친절 지도
-
-[사용자 정보]
-- 사용자 분류: ${userCategory || "미지정"}
-- 학습 목표: ${goal || "미지정"}
-- 사용자 질문: ${userQuery || "나에게 맞는 수강 과정을 추천해주세요."}
-
-[응답 지침]
-- 정중하고 친절한 어조로 한국어로 답변해줘.
-- 질문자의 상황에 부합하는 홍천 중앙정보처리학원의 강좌를 1~2개 추천하고, 왜 맞는지 간단히 설명해줘.
-- 국비지원(국민내일배움카드) 대상일 수 있다면 그 점을 언급하고 학원 방문/전화 상담(033-433-1926)을 유도해줘.
-- 답변은 300자 이내로 핵심 위주로 명확하고 읽기 쉽게 작성해줘.
-`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-      });
-
-      return res.json({ reply: response.text || "상담 요청에 응답할 수 없습니다. 학원으로 직접 문의해 주세요 (033-433-1926)." });
-    } catch (error) {
-      console.error("Gemini API Error:", error);
-      return res.json({
-        reply: `안녕하세요! 질문해 주셔서 감사합니다.\n\n고객님의 상황에 맞는 맞춤형 수강 과정과 국비지원 자격 여부는 학원으로 전화(033-433-1926) 주시면 가장 정확하게 안내해 드립니다.`
-      });
-    }
+    const result = await handleAskAiRequest(req.body, clientIp);
+    res.status(result.status).json(result.body);
   });
 
   // Vite middleware for development vs static in production

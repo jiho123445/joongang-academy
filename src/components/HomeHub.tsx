@@ -16,10 +16,11 @@ import {
   Flame,
 } from 'lucide-react';
 import { COURSES_DATA, ACADEMY_INFO } from '../data/coursesData';
-import { Notice } from '../types';
+import { Notice, Course } from '../types';
 import {
   subscribeNoticesFromFirestore,
   subscribePopularCoursesFromFirestore,
+  subscribeCoursesFromFirestore,
 } from '../lib/firestoreService';
 import { PopularCourseAdminItem } from './InquiryAdminModal';
 
@@ -36,13 +37,20 @@ export const HomeHub: React.FC<HomeHubProps> = ({
 }) => {
   const [boardNotices, setBoardNotices] = useState<Notice[]>([]);
   const [popularCourses, setPopularCourses] = useState<PopularCourseAdminItem[]>([]);
+  const [courses, setCourses] = useState<Course[]>(COURSES_DATA);
 
   useEffect(() => {
     const unsubNotices = subscribeNoticesFromFirestore((data) => setBoardNotices(data));
     const unsubPopular = subscribePopularCoursesFromFirestore((data) => setPopularCourses(data));
+    const unsubCourses = subscribeCoursesFromFirestore((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setCourses(data);
+      }
+    });
     return () => {
       unsubNotices();
       unsubPopular();
+      unsubCourses();
     };
   }, []);
 
@@ -68,7 +76,7 @@ export const HomeHub: React.FC<HomeHubProps> = ({
     {
       id: 'intro',
       title: '학원소개 & 원장인사',
-      desc: '1999년 설립 25년 전통, 1:1 맞춤 지도 실습 환경',
+      desc: '1999년 설립 27년 전통, 1:1 맞춤 지도 실습 환경',
       icon: Award,
       badge: 'SINCE 1999',
       color: 'from-purple-600 to-indigo-700',
@@ -169,7 +177,7 @@ export const HomeHub: React.FC<HomeHubProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {(popularCourses.length > 0 ? popularCourses.slice(0, 3) : COURSES_DATA.slice(0, 3)).map((item: any) => {
+            {(popularCourses.length > 0 ? popularCourses.slice(0, 3) : courses.slice(0, 3)).map((item: any) => {
               const isFirestorePop = Boolean(item.badge || item.timeSlot);
               const title = item.title || item.courseTitle;
               const badge = item.badge || item.category || '인기강좌';

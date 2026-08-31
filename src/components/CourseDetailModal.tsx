@@ -2,6 +2,7 @@ import React from 'react';
 import { Course } from '../types';
 import { X, CheckCircle2, Clock, Users, Calendar, Award, CreditCard, Phone } from 'lucide-react';
 import { ACADEMY_INFO } from '../data/coursesData';
+import { useModalA11y } from '../lib/useModalA11y';
 
 interface CourseDetailModalProps {
   course: Course | null;
@@ -14,11 +15,24 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
   onClose,
   onApply,
 }) => {
+  const panelRef = useModalA11y(!!course, onClose);
+
   if (!course) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-fadeIn">
-      <div className="bg-white/90 backdrop-blur-2xl rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/80">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="course-detail-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white/90 backdrop-blur-2xl rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/80"
+      >
         
         {/* Modal Header */}
         <div className="sticky top-0 bg-slate-900/90 backdrop-blur-md text-white p-5 sm:p-6 flex items-start justify-between rounded-t-3xl z-10 border-b border-white/10">
@@ -33,7 +47,7 @@ export const CourseDetailModal: React.FC<CourseDetailModalProps> = ({
                 </span>
               )}
             </div>
-            <h3 className="text-xl sm:text-2xl font-black">{course.title}</h3>
+            <h3 id="course-detail-title" className="text-xl sm:text-2xl font-black">{course.title}</h3>
           </div>
           <button
             onClick={onClose}

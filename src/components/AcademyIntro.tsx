@@ -56,7 +56,7 @@ export const AcademyIntro: React.FC = () => {
               <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white mx-auto flex items-center justify-center font-black text-2xl shadow-lg shadow-blue-500/30">
                 25+
               </div>
-              <h4 className="text-lg font-bold text-white">25년 전통의 깊은 신뢰</h4>
+              <h4 className="text-lg font-bold text-white">27년 전통의 깊은 신뢰</h4>
               <p className="text-xs text-slate-200 leading-relaxed">
                 1999년부터 지금까지 홍천군민 수만 명의 IT 정보화 교육 및 국가기술자격증 배출을 책임져 왔습니다.
               </p>
