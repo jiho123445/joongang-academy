@@ -56,6 +56,20 @@ export default function App() {
   const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig | null>(DEFAULT_OPENING_POPUP);
   const [isNoticePopupOpen, setIsNoticePopupOpen] = useState<boolean>(false);
 
+  // "오늘 하루 동안 보지 않기"를 눌렀는지 확인합니다. 최초 접속 시뿐 아니라,
+  // 로고/홈 버튼을 눌러 홈으로 돌아올 때도 이 값을 반드시 확인해야
+  // 방문자가 하루 안 보기를 눌러도 사이트를 둘러보다 다시 팝업이 뜨는 일이 없습니다.
+  const isNoticePopupHiddenToday = (): boolean => {
+    try {
+      const hiddenDate = localStorage.getItem('hide_notice_popup_until');
+      const todayStr = new Date().toISOString().slice(0, 10);
+      return hiddenDate === todayStr;
+    } catch (e) {
+      console.warn('localStorage not accessible:', e);
+      return false;
+    }
+  };
+
   // Pending Inquiries Count State for Admin Red Indicator
   const [pendingInquiryCount, setPendingInquiryCount] = useState<number>(0);
 
@@ -101,22 +115,12 @@ export default function App() {
     const unsubscribe = subscribeOpeningPopupFromFirestore((cfg) => {
       setNoticeConfig(cfg);
 
-      let hiddenDate = null;
-      try {
-        hiddenDate = localStorage.getItem('hide_notice_popup_until');
-      } catch (e) {
-        console.warn('localStorage not accessible:', e);
-      }
-
-      const todayStr = new Date().toISOString().slice(0, 10);
-
       // "오늘 하루 동안 보지 않기"를 누른 경우, 카카오톡/외부 유입 등
       // 어떤 경로로 들어와도 오늘 하루는 절대 다시 뜨지 않아야 합니다.
       // (예전에는 카카오톡 인앱 브라우저나 '#notices' 공지 페이지로 들어오면
       // hiddenDate와 무관하게 무조건 다시 열려서, 하루 안 보기를 눌러도
       // 팝업이 계속 다시 떴습니다.)
-      const hiddenToday = hiddenDate === todayStr;
-      if (cfg.enabled && !hiddenToday) {
+      if (cfg.enabled && !isNoticePopupHiddenToday()) {
         setIsNoticePopupOpen(true);
       }
     });
@@ -297,8 +301,11 @@ export default function App() {
     // 옛날 #주소로 기록되는 불일치가 있었습니다.
     trackPageView(targetPath, targetPage);
 
-    // Open opening notice popup modal when Home button/logo is clicked
-    if (pageId === 'home' || pageId === 'hero') {
+    // Open opening notice popup modal when Home button/logo is clicked —
+    // 단, "오늘 하루 동안 보지 않기"를 누른 방문자에게는 홈으로 이동할 때도
+    // 다시 띄우지 않습니다(안 그러면 하루 안 보기를 눌러도 사이트를 둘러보다
+    // 로고를 누르는 순간 팝업이 또 나타나 버립니다).
+    if ((pageId === 'home' || pageId === 'hero') && !isNoticePopupHiddenToday()) {
       setIsNoticePopupOpen(true);
     }
   };
