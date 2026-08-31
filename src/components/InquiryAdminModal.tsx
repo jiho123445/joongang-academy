@@ -126,6 +126,13 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   // 이메일 입력칸 대신 비밀번호 입력칸에 바로 포커스를 줍니다.
   const emailWasPrefilledRef = useRef<boolean>(loginEmail.length > 0);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  // 입력창 안의 글자를 마우스로 드래그해서 선택할 때, 드래그 도중 커서가
+  // 살짝 바깥 여백(어두운 배경)까지 나갔다가 그 위에서 손을 떼면 브라우저는
+  // 그 지점에서 "클릭"이 일어난 것으로 처리합니다. 배경(overlay) 클릭만으로
+  // 팝업을 닫으려던 기존 로직이 이걸 "배경 클릭"으로 오인해서 팝업이 갑자기
+  // 사라졌습니다. 그래서 마우스를 누른 시작 지점도 배경이었는지 함께 확인해서,
+  // 드래그가 아니라 진짜로 배경을 클릭했을 때만 닫히도록 합니다.
+  const backdropMouseDownRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (isOpen && !isAuthenticated && emailWasPrefilledRef.current) {
@@ -1701,8 +1708,12 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
   return (
     <div
+      onMouseDown={(e) => {
+        backdropMouseDownRef.current = e.target === e.currentTarget;
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && backdropMouseDownRef.current) onClose();
+        backdropMouseDownRef.current = false;
       }}
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-fadeIn overflow-y-auto"
     >
