@@ -155,14 +155,17 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
                 )}
               </button>
             )}
-            <button
-              onClick={() => handleNavClick('inquiry')}
+            <a
+              href={ACADEMY_INFO.enrollmentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               id="header-inquiry-btn"
               className="inline-flex items-center gap-1.5 px-4 xl:px-5 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs xl:text-sm shadow-lg shadow-blue-200 hover:shadow-blue-300 transition-all whitespace-nowrap"
+              title="수강신청 (새 창에서 열림)"
             >
               <FileText className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
-              <span>수강 문의</span>
-            </button>
+              <span>수강신청</span>
+            </a>
           </div>
 
           {/* Mobile Hamburger Menu Toggle */}
@@ -222,12 +225,14 @@ export const Header: React.FC<HeaderProps> = ({ activeSection, onNavigate, onOpe
           </div>
 
           <div className="pt-2 grid grid-cols-2 gap-2">
-            <button
-              onClick={() => handleNavClick('inquiry')}
+            <a
+              href={ACADEMY_INFO.enrollmentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="w-full py-3 bg-blue-600 text-white font-bold text-sm rounded-xl text-center shadow-lg shadow-blue-200 cursor-pointer"
             >
               온라인 수강신청
-            </button>
+            </a>
             <button
               onClick={onOpenAiModal}
               className="w-full py-3 bg-slate-900 text-white font-bold text-sm rounded-xl text-center flex items-center justify-center gap-1.5 shadow cursor-pointer"
