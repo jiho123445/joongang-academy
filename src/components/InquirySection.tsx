@@ -4,6 +4,7 @@ import { COURSES_DATA, ACADEMY_INFO } from '../data/coursesData';
 import { FileText, Send, Phone, CheckCircle2, AlertCircle, Clock, ShieldCheck, Sparkles, FileSpreadsheet, RotateCcw } from 'lucide-react';
 import { submitApplicationToFirestore, formatReceiptNumber, subscribeCoursesFromFirestore } from '../lib/firestoreService';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
+import { forwardInquiryToConsultApp } from '../lib/prospectForward';
 
 interface InquirySectionProps {
   preselectedCourse?: string;
@@ -108,23 +109,49 @@ export const InquirySection: React.FC<InquirySectionProps> = ({ preselectedCours
     setStatusMessage(null);
 
     const submittedName = formData.name.trim();
-
-    try {
-      const record = await submitApplicationToFirestore(formData);
-      window.dispatchEvent(new Event('inquiry_submitted'));
-      
+    const submittedForm = { ...formData };
+    const resetForNext = () => {
       // Reset form input values completely for the next inquiry
       setFormData(getInitialForm());
       setHoneypot('');
       setPrivacyConsent(false);
       formOpenedAtRef.current = Date.now();
+    };
 
-      setStatusMessage({
-        type: 'success',
-        text: `${submittedName}님의 수강 신청이 성공적으로 접수되었습니다! (접수번호: ${formatReceiptNumber(record)}) 빠르게 확인 후 안내 연락을 드리겠습니다.`,
-      });
-    } catch (err) {
-      console.error('Firestore application submission failed:', err);
+    try {
+      // 1) 홈페이지 Firestore(applications)에 접수번호와 함께 저장 (기존 방식 그대로)
+      let record: Awaited<ReturnType<typeof submitApplicationToFirestore>> | null = null;
+      try {
+        record = await submitApplicationToFirestore(submittedForm);
+      } catch (err) {
+        console.error('Firestore application submission failed:', err);
+      }
+
+      // 2) 같은 내용을 예비 수강생 상담(class-apply)에도 전달
+      const forwarding = forwardInquiryToConsultApp(submittedForm, record?.receiptNumber);
+
+      if (record) {
+        // 홈페이지 저장이 성공했으면 전달은 기다리지 않습니다(실패해도 접수는 정상).
+        void forwarding;
+        window.dispatchEvent(new Event('inquiry_submitted'));
+        resetForNext();
+        setStatusMessage({
+          type: 'success',
+          text: `${submittedName}님의 수강 신청이 성공적으로 접수되었습니다! (접수번호: ${formatReceiptNumber(record)}) 빠르게 확인 후 안내 연락을 드리겠습니다.`,
+        });
+        return;
+      }
+
+      // 홈페이지 저장이 실패했을 때: 상담 앱 전달이 성공하면 접수된 것으로 안내합니다.
+      if (await forwarding) {
+        resetForNext();
+        setStatusMessage({
+          type: 'success',
+          text: `${submittedName}님의 수강 신청이 접수되었습니다! 빠르게 확인 후 안내 연락을 드리겠습니다.`,
+        });
+        return;
+      }
+
       setStatusMessage({
         type: 'error',
         text: '접수 중 오류가 발생했습니다. 잠시 후 다시 시도하시거나 학원 전화(033-433-1926)로 문의해 주세요.',
