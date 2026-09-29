@@ -1,12 +1,44 @@
 import React from 'react';
-import { Calendar, Sparkles, X, ChevronRight, CheckCircle2, Megaphone, Clock, BookOpen } from 'lucide-react';
+import { X, ChevronRight, MapPin, Phone } from 'lucide-react';
 import { useModalA11y } from '../lib/useModalA11y';
+
+export type ScheduleLabelColor = 'blue' | 'emerald' | 'amber' | 'purple';
 
 export interface ScheduleItem {
   courseName: string;
   startDate: string;
   timeSlot: string;
+  /** 과정 박스 왼쪽 위 작은 분류 글씨 (예: "모집중 · 국비지원", "시니어"). 비우면 표시 안 함 */
+  label?: string;
+  /** 분류 글씨 색 (홈 화면 인기 강좌 카드와 같은 4가지) */
+  labelColor?: ScheduleLabelColor;
+  /** 과정명 아래 한 줄 설명 (예: "교재비 무료 · 최대 100% 정부지원"). 비우면 표시 안 함 */
+  description?: string;
 }
+
+export type PopupSize = 'small' | 'medium' | 'large';
+export type PopupPosition = 'center' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+export const POPUP_SIZE_OPTIONS: { value: PopupSize; label: string }[] = [
+  { value: 'small', label: '작게' },
+  { value: 'medium', label: '보통' },
+  { value: 'large', label: '크게' },
+];
+
+export const POPUP_POSITION_OPTIONS: { value: PopupPosition; label: string }[] = [
+  { value: 'center', label: '가운데' },
+  { value: 'top-left', label: '왼쪽 위' },
+  { value: 'top-right', label: '오른쪽 위' },
+  { value: 'bottom-left', label: '왼쪽 아래' },
+  { value: 'bottom-right', label: '오른쪽 아래' },
+];
+
+export const SCHEDULE_LABEL_COLOR_OPTIONS: { value: ScheduleLabelColor; label: string }[] = [
+  { value: 'blue', label: '파랑' },
+  { value: 'emerald', label: '초록' },
+  { value: 'amber', label: '주황' },
+  { value: 'purple', label: '보라' },
+];
 
 export interface PopupNoticeConfig {
   enabled: boolean;
@@ -21,6 +53,10 @@ export interface PopupNoticeConfig {
    *  비워두면(=falsy) 상단 뱃지 문구(badgeText)를 그대로 사용해
    *  팝업 뱃지 문구가 바뀌면 플로팅 버튼 문구도 함께 바뀐다. */
   buttonLabel?: string;
+  /** 팝업 크기 (기본: 보통) */
+  popupSize?: PopupSize;
+  /** 팝업 위치 (기본: 가운데). 휴대폰처럼 좁은 화면에서는 항상 가운데 */
+  popupPosition?: PopupPosition;
   updatedAt?: string;
 }
 
@@ -31,6 +67,29 @@ interface NoticePopupModalProps {
   onActionClick: () => void;
   onHideToday: () => void;
 }
+
+// 홈 화면 "실시간 인기 수강 강좌" 카드와 같은 색 규칙
+export const SCHEDULE_COLOR_CLASSES: Record<ScheduleLabelColor, { border: string; text: string }> = {
+  blue: { border: 'border-blue-100', text: 'text-blue-600' },
+  emerald: { border: 'border-emerald-100', text: 'text-emerald-600' },
+  amber: { border: 'border-amber-100', text: 'text-amber-600' },
+  purple: { border: 'border-purple-100', text: 'text-purple-600' },
+};
+
+const SIZE_CLASSES: Record<PopupSize, { width: string; title: string; body: string; item: string; small: string }> = {
+  small: { width: 'sm:max-w-[21rem]', title: 'text-lg', body: 'text-[13px]', item: 'text-[13px]', small: 'text-[11px]' },
+  medium: { width: 'sm:max-w-[25rem]', title: 'text-xl', body: 'text-sm', item: 'text-sm', small: 'text-xs' },
+  large: { width: 'sm:max-w-[29rem]', title: 'text-2xl', body: 'text-[15px]', item: 'text-[15px]', small: 'text-[13px]' },
+};
+
+// 휴대폰(sm 미만)에서는 항상 가운데, sm 이상에서만 지정 위치 적용
+const POSITION_CLASSES: Record<PopupPosition, string> = {
+  center: 'items-center justify-center',
+  'top-left': 'items-center justify-center sm:items-start sm:justify-start sm:p-6',
+  'top-right': 'items-center justify-center sm:items-start sm:justify-end sm:p-6',
+  'bottom-left': 'items-center justify-center sm:items-end sm:justify-start sm:p-6',
+  'bottom-right': 'items-center justify-center sm:items-end sm:justify-end sm:p-6',
+};
 
 export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
   noticeConfig,
@@ -44,164 +103,135 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
 
   if (!shouldShow) return null;
 
-  const schedules = noticeConfig.schedules && noticeConfig.schedules.length > 0
-    ? noticeConfig.schedules
-    : [];
+  const size = SIZE_CLASSES[noticeConfig.popupSize || 'medium'] || SIZE_CLASSES.medium;
+  const position: PopupPosition = noticeConfig.popupPosition || 'center';
+  const isCorner = position !== 'center';
+
+  const schedules = (noticeConfig.schedules || []).filter(
+    (item) => item.courseName || item.startDate || item.timeSlot
+  );
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in"
+      className={`fixed inset-0 z-[100] flex p-4 animate-fade-in bg-slate-900/60 ${
+        // 모서리 위치일 때 PC에서는 배경을 어둡게 하지 않고 홈페이지를 그대로 쓸 수 있게 함
+        isCorner ? 'sm:bg-transparent sm:pointer-events-none' : 'backdrop-blur-[2px]'
+      } ${POSITION_CLASSES[position]}`}
       onClick={onClose}
     >
-      {/* Modal Card */}
-      <div 
+      <div
         id="notice-popup-card"
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={isCorner ? undefined : true}
         aria-labelledby="notice-popup-title"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col transform transition-all animate-scale-up max-h-[90vh]"
+        className={`pointer-events-auto relative w-full max-w-[25rem] ${size.width} bg-white rounded-3xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden max-h-[90vh] animate-scale-up`}
       >
-        {/* Header Visual Banner */}
-        <div className="relative bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-5 sm:p-6 text-white overflow-hidden shrink-0">
-          {/* Subtle decorative background circles */}
-          <div className="absolute -top-12 -right-12 w-40 h-40 bg-blue-500/20 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-amber-500/20 rounded-full blur-xl pointer-events-none" />
-
-          {/* Top Bar: Badge & Close Button */}
-          <div className="flex items-center justify-between gap-2 mb-2.5 relative z-10">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-black text-xs shadow-md">
-              <Megaphone className="w-3.5 h-3.5" />
-              <span>{noticeConfig.badgeText || '개강 공지사항'}</span>
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6">
+          {/* 뱃지 + 닫기 */}
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <span className="inline-block bg-gradient-to-r from-blue-600 to-emerald-500 text-white font-bold text-xs px-3 py-1 rounded-full shadow">
+              {noticeConfig.badgeText || '개강 안내'}
             </span>
-
             <button
+              type="button"
               onClick={onClose}
               id="notice-popup-close-x"
-              className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 -mr-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               title="닫기"
+              aria-label="닫기"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Main Title & Subtitle */}
-          <h2 id="notice-popup-title" className="text-xl sm:text-2xl font-black tracking-tight text-white leading-snug mb-1 relative z-10">
+          {/* 제목 / 부제목 / 본문 */}
+          <h2 id="notice-popup-title" className={`${size.title} font-extrabold text-slate-800 leading-snug`}>
             {noticeConfig.title}
           </h2>
           {noticeConfig.subtitle && (
-            <p className="text-xs sm:text-sm text-blue-200 font-medium relative z-10">
-              {noticeConfig.subtitle}
+            <p className={`${size.small} text-slate-500 mt-1`}>{noticeConfig.subtitle}</p>
+          )}
+          {noticeConfig.content && (
+            <p className={`${size.body} text-slate-600 leading-relaxed whitespace-pre-line mt-3`}>
+              {noticeConfig.content}
             </p>
           )}
-        </div>
 
-        {/* Modal Body */}
-        <div className="p-5 sm:p-6 space-y-4 flex-1 overflow-y-auto">
-          {/* Detailed Content Box */}
-          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 text-slate-700 text-xs sm:text-sm leading-relaxed whitespace-pre-line font-medium shadow-inner">
-            {noticeConfig.content}
-          </div>
-
-          {/* Structured Opening Schedules List (4+ Slots) */}
+          {/* 과정별 일정 — 홈 화면 인기 강좌 카드와 같은 모양 */}
           {schedules.length > 0 ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5 px-1 text-xs font-black text-slate-800">
-                <Calendar className="w-4 h-4 text-blue-600" />
-                <span>주요 과목 개강 일정 및 강의 시간</span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2">
-                {schedules.map((item, idx) => {
-                  if (!item.courseName && !item.startDate && !item.timeSlot) return null;
-                  return (
-                    <div
-                      key={idx}
-                      className="p-3 bg-gradient-to-r from-blue-50/90 to-indigo-50/50 border border-blue-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs shadow-sm hover:border-blue-400 transition-colors"
-                    >
-                      <div className="flex items-center gap-2 font-black text-slate-900 text-xs sm:text-sm">
-                        <span className="w-5 h-5 rounded-lg bg-blue-600 text-white font-extrabold flex items-center justify-center shrink-0 text-[10px]">
-                          {idx + 1}
-                        </span>
-                        <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0 hidden sm:inline" />
-                        <span className="truncate">{item.courseName || '과정선택'}</span>
+            <div className="space-y-2.5 mt-4">
+              {schedules.map((item, idx) => {
+                const color = SCHEDULE_COLOR_CLASSES[item.labelColor || 'blue'] || SCHEDULE_COLOR_CLASSES.blue;
+                return (
+                  <div key={idx} className={`p-3.5 bg-white rounded-2xl border ${color.border} shadow-sm`}>
+                    {(item.label || item.startDate || item.timeSlot) && (
+                      <div className="flex flex-wrap justify-between items-center gap-x-2 gap-y-1 mb-1">
+                        <span className={`${size.small} font-bold ${color.text}`}>{item.label}</span>
+                        <div className={`flex items-center gap-2 ${size.small} text-slate-400 font-mono`}>
+                          {item.startDate && (
+                            <span className="font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                              {item.startDate}
+                            </span>
+                          )}
+                          {item.timeSlot && <span>{item.timeSlot}</span>}
+                        </div>
                       </div>
-
-                      <div className="flex items-center gap-3 shrink-0 text-[11px] font-bold text-slate-700 pl-7 sm:pl-0">
-                        {item.startDate && (
-                          <span className="px-2 py-0.5 rounded-md bg-white border border-blue-200 text-blue-900 flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-blue-600 shrink-0" />
-                            <span>{item.startDate}</span>
-                          </span>
-                        )}
-                        {item.timeSlot && (
-                          <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                            <span>{item.timeSlot}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    )}
+                    <h3 className={`${size.item} font-bold text-slate-800`}>{item.courseName || '과정명'}</h3>
+                    {item.description && (
+                      <p className={`${size.small} text-slate-500 mt-0.5`}>{item.description}</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : noticeConfig.dateText ? (
-            <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-950">
-              <div className="p-2 bg-blue-600 text-white rounded-xl shrink-0 mt-0.5 shadow">
-                <Calendar className="w-4 h-4" />
-              </div>
-              <div className="text-xs sm:text-sm">
-                <p className="font-bold text-blue-900 mb-0.5">개강 일정 및 시간대</p>
-                <p className="font-semibold text-blue-800 leading-snug">{noticeConfig.dateText}</p>
-              </div>
+            <div className="mt-4 p-3.5 bg-white rounded-2xl border border-blue-100 shadow-sm">
+              <span className={`${size.small} font-bold text-blue-600`}>개강 일정</span>
+              <p className={`${size.item} font-bold text-slate-800 mt-0.5`}>{noticeConfig.dateText}</p>
             </div>
           ) : null}
 
-          {/* Key Advantages list */}
-          <div className="space-y-1.5 pt-1">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>고용노동부 내일배움카드 최대 100% 국비 지원 대상</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>1인 1대 최신 고성능 실습 PC 환경 & 1:1 밀착지도</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>홍천읍 신장대로 48 위치 (접근성 우수, 27년 전통)</span>
-            </div>
-          </div>
-
-          {/* Main Call To Action Button */}
+          {/* 신청 버튼 */}
           <button
+            type="button"
             onClick={onActionClick}
             id="notice-popup-apply-btn"
-            className="w-full py-3.5 px-5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm sm:text-base rounded-2xl shadow-xl shadow-blue-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer transform active:scale-98"
+            className="w-full mt-5 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            <Sparkles className="w-5 h-5 text-amber-300 animate-spin-slow" />
-            <span>{noticeConfig.actionText || '온라인 수강 신청하기'}</span>
-            <ChevronRight className="w-5 h-5" />
+            <span>{noticeConfig.actionText || '온라인 수강신청하기'}</span>
+            <ChevronRight className="w-4 h-4" />
           </button>
+          <div className="flex items-center justify-between text-xs text-slate-500 px-1 mt-2.5">
+            <span className="flex items-center gap-1">
+              <MapPin className="w-3.5 h-3.5 text-slate-400" />
+              홍천읍 신장대로 48, 2층
+            </span>
+            <a href="tel:0334331926" className="flex items-center gap-1 hover:text-slate-700">
+              <Phone className="w-3.5 h-3.5 text-slate-400" />
+              033-433-1926
+            </a>
+          </div>
         </div>
 
-        {/* Modal Footer: Hide for today & Close */}
-        <div className="px-6 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 font-bold shrink-0">
+        {/* 하단: 오늘 하루 보지 않기 / 닫기 */}
+        <div className="px-5 sm:px-6 py-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 shrink-0">
           <button
+            type="button"
             onClick={onHideToday}
             id="notice-popup-hide-today"
-            className="hover:text-blue-700 transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="underline underline-offset-2 hover:text-slate-800 transition-colors cursor-pointer"
           >
-            <span className="underline underline-offset-2">오늘 하루 동안 보지 않기</span>
+            오늘 하루 보지 않기
           </button>
-
           <button
+            type="button"
             onClick={onClose}
             id="notice-popup-close-btn"
-            className="px-4 py-1.5 rounded-xl bg-white hover:bg-slate-200 border border-slate-300 text-slate-700 transition-colors cursor-pointer shadow-sm"
+            className="px-3.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
           >
             닫기
           </button>

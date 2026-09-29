@@ -1,7 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { InquiryRecord, Notice, Course } from '../types';
 import { ACADEMY_INFO } from '../data/coursesData';
-import { ScheduleItem, PopupNoticeConfig } from './NoticePopupModal';
+import {
+  ScheduleItem,
+  PopupNoticeConfig,
+  PopupSize,
+  PopupPosition,
+  ScheduleLabelColor,
+  POPUP_SIZE_OPTIONS,
+  POPUP_POSITION_OPTIONS,
+  SCHEDULE_LABEL_COLOR_OPTIONS,
+  SCHEDULE_COLOR_CLASSES,
+} from './NoticePopupModal';
+import { useDraggableWindow } from '../lib/useDraggableWindow';
 import { MaterialsAdminPanel } from './MaterialsAdminPanel';
 import { StudentApprovalPanel } from './StudentApprovalPanel';
 import { AccountManagementPanel } from './AccountManagementPanel';
@@ -42,6 +53,13 @@ import {
 } from '../lib/firestoreService';
 import {
   X,
+  Maximize2,
+  Minimize2,
+  KeyRound,
+  LogOut,
+  LocateFixed,
+  ChevronRight,
+  MapPin,
   Download,
   Search,
   Filter,
@@ -93,6 +111,27 @@ interface InquiryAdminModalProps {
   onClose: () => void;
   onNoticeUpdated?: () => void;
 }
+
+type AdminTabKey =
+  | 'inquiries'
+  | 'notice'
+  | 'boardNotices'
+  | 'popularCourses'
+  | 'courses'
+  | 'errorLogs'
+  | 'materials'
+  | 'students'
+  | 'accounts';
+
+// 창 위치 미리보기(작은 화면 그림)에서 팝업 네모의 위치/크기
+const POSITION_PREVIEW_CLASSES: Record<PopupPosition, string> = {
+  center: 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
+  'top-left': 'left-[6%] top-[8%]',
+  'top-right': 'right-[6%] top-[8%]',
+  'bottom-left': 'left-[6%] bottom-[8%]',
+  'bottom-right': 'right-[6%] bottom-[8%]',
+};
+const SIZE_PREVIEW_WIDTH: Record<PopupSize, string> = { small: '24%', medium: '29%', large: '34%' };
 
 export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   isOpen,
@@ -160,7 +199,14 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
   const [changePwLoading, setChangePwLoading] = useState<boolean>(false);
 
   // Tab state: 'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'courses' | 'errorLogs'
-  const [activeTab, setActiveTab] = useState<'inquiries' | 'notice' | 'boardNotices' | 'popularCourses' | 'courses' | 'errorLogs' | 'materials' | 'students' | 'accounts'>('inquiries');
+  const [activeTab, setActiveTab] = useState<AdminTabKey>('inquiries');
+
+  // 관리자 창 이동·크기 조절 (마지막 위치·크기는 이 브라우저에 기억됨)
+  const adminWindow = useDraggableWindow({
+    storageKey: 'admin_window_rect',
+    defaultWidth: 1152,
+    defaultHeight: 820,
+  });
 
   // Board Notices (공지사항 & 자격시험 일정) State
   const [boardNotices, setBoardNotices] = useState<Notice[]>([]);
@@ -237,10 +283,10 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
   // Default 4 schedules
   const defaultSchedules: ScheduleItem[] = [
-    { courseName: '컴퓨터활용능력 (1급 / 2급)', startDate: '9월 08일 개강', timeSlot: '오전 10:00 / 야간 19:00' },
-    { courseName: '전산세무회계 (전산회계1급/세무2급)', startDate: '9월 15일 개강', timeSlot: '오후 14:00 / 야간 19:00' },
-    { courseName: '시니어 어르신 왕초보 컴퓨터&스마트폰', startDate: '9월 10일 개강', timeSlot: '오후 13:30 ~ 15:00' },
-    { courseName: '정보처리기능사 / GTQ 포토샵 자격증', startDate: '10월 01일 개강', timeSlot: '오후 15:30 / 야간 19:00' },
+    { label: '모집중 · 국비지원', labelColor: 'blue', courseName: '컴퓨터활용능력 (1급 / 2급)', startDate: '9월 08일 개강', timeSlot: '오전 10:00 / 야간 19:00', description: '교재비 무료 · 최대 100% 정부지원' },
+    { label: '오후반', labelColor: 'blue', courseName: '전산세무회계 (전산회계1급/세무2급)', startDate: '9월 15일 개강', timeSlot: '오후 14:00 / 야간 19:00' },
+    { label: '시니어', labelColor: 'emerald', courseName: '시니어 어르신 왕초보 컴퓨터&스마트폰', startDate: '9월 10일 개강', timeSlot: '오후 13:30 ~ 15:00', description: '친절한 1:1 눈높이 지도' },
+    { label: '자격증', labelColor: 'purple', courseName: '정보처리기능사 / GTQ 포토샵 자격증', startDate: '10월 01일 개강', timeSlot: '오후 15:30 / 야간 19:00' },
   ];
 
   // Popup Notice State
@@ -254,6 +300,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
     schedules: defaultSchedules,
     actionText: '지금 온라인 수강신청하기',
     buttonLabel: '',
+    popupSize: 'medium',
+    popupPosition: 'center',
   });
   const [savingNotice, setSavingNotice] = useState<boolean>(false);
   const [noticeSuccessMsg, setNoticeSuccessMsg] = useState<string>('');
@@ -1706,6 +1754,47 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
 
   if (!isOpen) return null;
 
+  // 왼쪽 메뉴 (세 묶음)
+  const pendingInquiryCount = inquiries.filter((item) => item.status === '상담대기' || !item.status).length;
+  const adminMenuGroups: {
+    title: string;
+    items: { key: AdminTabKey; label: string; icon: React.ElementType; count?: number; hint?: string }[];
+  }[] = [
+    {
+      title: '상담·수강생',
+      items: [
+        { key: 'inquiries', label: '수강신청 목록', icon: FileSpreadsheet, count: inquiries.length },
+        { key: 'students', label: '수강생 승인 관리', icon: UserCheck },
+      ],
+    },
+    {
+      title: '홈페이지 관리',
+      items: [
+        { key: 'notice', label: '개강 공지 팝업', icon: Megaphone },
+        { key: 'popularCourses', label: '실시간 인기강좌', icon: Flame, count: popularCourses.length },
+        { key: 'courses', label: '교육과정', icon: BookOpen, count: courses.length },
+        { key: 'boardNotices', label: '공지·자격시험', icon: Bell, count: boardNotices.length },
+        { key: 'materials', label: '자료실', icon: FileText },
+      ],
+    },
+    {
+      title: '시스템',
+      items: [
+        { key: 'accounts', label: '전체 계정 관리', icon: Users },
+        {
+          key: 'errorLogs',
+          label: '오류 로그',
+          icon: AlertTriangle,
+          count: errorLogs.length,
+          hint: '방문자 화면에서 발생한 오류를 자동으로 모아 보여줍니다',
+        },
+      ],
+    },
+  ];
+
+  const headerIconBtn =
+    'p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer';
+
   return (
     <div
       onMouseDown={(e) => {
@@ -1715,219 +1804,133 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
         if (e.target === e.currentTarget && backdropMouseDownRef.current) onClose();
         backdropMouseDownRef.current = false;
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-fadeIn overflow-y-auto"
+      className="fixed inset-0 z-50 bg-slate-900/40 animate-fadeIn"
     >
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden my-auto">
-        
-        {/* Header */}
-        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-5 sm:p-6 text-white flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-600/30 border border-blue-400/40 rounded-2xl text-blue-300">
-              <FileSpreadsheet className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold rounded-full">
-                  원장님 / 관리자 전용
-                </span>
-                <span className="text-xs text-slate-300">홍천 중앙정보처리학원</span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-0.5">
-                온라인 수강신청 누적 데이터 관리
-              </h2>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {isAuthenticated && (
-              <>
-                <span className="hidden sm:inline text-[11px] text-slate-400 font-bold mr-1" title="현재 로그인된 관리자">
-                  {getCurrentAdminEmail()}
-                </span>
-                <button
-                  type="button"
-                  onClick={openChangePwModal}
-                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 border border-white/10"
-                  title="비밀번호 변경"
-                >
-                  <Edit3 className="w-3.5 h-3.5 text-blue-300" />
-                  <span>비밀번호 변경</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAdminLogout}
-                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs transition-all cursor-pointer flex items-center gap-1 border border-white/10 mr-1"
-                  title="관리자 인증 잠금"
-                >
-                  <Lock className="w-3.5 h-3.5 text-blue-300" />
-                  <span>로그아웃</span>
-                </button>
-              </>
-            )}
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-window-title"
+        style={adminWindow.style}
+        className={`absolute bg-white border border-slate-300 shadow-2xl flex flex-col overflow-hidden ${
+          adminWindow.isFullScreen ? 'rounded-none' : 'rounded-2xl'
+        }`}
+      >
+        {/* 제목줄 — 끌어서 이동, 더블클릭하면 크게/원래대로 */}
+        <div
+          onPointerDown={adminWindow.onDragStart}
+          onDoubleClick={(e) => {
+            if (adminWindow.isMobile || (e.target as HTMLElement).closest('button')) return;
+            adminWindow.toggleMaximize();
+          }}
+          className={`h-12 px-3 sm:px-4 flex items-center gap-2 border-b border-slate-200 bg-white shrink-0 select-none touch-none ${
+            adminWindow.isFullScreen ? '' : 'cursor-move'
+          }`}
+        >
+          <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0" />
+          <h2 id="admin-window-title" className="text-sm sm:text-base font-black text-slate-800 truncate">
+            관리자 모드
+          </h2>
+          <span className="hidden sm:inline px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+            원장님 / 관리자 전용
+          </span>
+          <span className="flex-1" />
+          {isAuthenticated && (
+            <>
+              <span className="hidden md:inline text-[11px] text-slate-400 font-medium mr-1 truncate" title="현재 로그인된 관리자">
+                {getCurrentAdminEmail()}
+              </span>
+              <button type="button" onClick={openChangePwModal} className={headerIconBtn} title="비밀번호 변경" aria-label="비밀번호 변경">
+                <KeyRound className="w-4 h-4" />
+              </button>
+              <button type="button" onClick={handleAdminLogout} className={headerIconBtn} title="로그아웃" aria-label="로그아웃">
+                <LogOut className="w-4 h-4" />
+              </button>
+              <span className="w-px h-5 bg-slate-200 mx-0.5" />
+            </>
+          )}
+          {!adminWindow.isMobile && (
+            <>
+              <button
+                type="button"
+                onClick={adminWindow.resetPosition}
+                className={headerIconBtn}
+                title="창을 처음 위치·크기로"
+                aria-label="창을 처음 위치·크기로"
+              >
+                <LocateFixed className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={adminWindow.toggleMaximize}
+                className={headerIconBtn}
+                title={adminWindow.isMaximized ? '원래 크기로' : '화면 가득 보기'}
+                aria-label={adminWindow.isMaximized ? '원래 크기로' : '화면 가득 보기'}
+              >
+                {adminWindow.isMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+            </>
+          )}
+          <button type="button" onClick={onClose} className={headerIconBtn} title="닫기" aria-label="닫기">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Tab Navigation Bar (When Authenticated) */}
-        {isAuthenticated && (() => {
-          const pendingCount = inquiries.filter((item) => item.status === '상담대기' || !item.status).length;
-          return (
-            <div className="bg-slate-900 border-t border-slate-800 px-5 sm:px-6 py-2.5 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('inquiries')}
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                    activeTab === 'inquiries'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span>수강 신청 목록 ({inquiries.length}건)</span>
-                  {pendingCount > 0 && (
-                    <span className="px-2 py-0.5 text-[10px] bg-red-600 text-white font-black rounded-full animate-pulse flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                      대기 {pendingCount}건
-                    </span>
-                  )}
-                </button>
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+        {/* 왼쪽 메뉴 (휴대폰에서는 위쪽 가로 스크롤) */}
+        {isAuthenticated && (
+          <nav
+            aria-label="관리 메뉴"
+            className="shrink-0 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 md:w-52 flex md:flex-col gap-1 p-2 overflow-x-auto md:overflow-x-hidden md:overflow-y-auto"
+          >
+            {adminMenuGroups.map((group) => (
+              <div key={group.title} className="flex md:flex-col gap-1 md:mb-2 shrink-0">
+                <p className="hidden md:block px-2.5 pt-2 pb-1 text-[11px] font-bold text-slate-400">{group.title}</p>
+                {group.items.map((item) => {
+                  const active = activeTab === item.key;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setActiveTab(item.key)}
+                      title={item.hint}
+                      aria-current={active ? 'page' : undefined}
+                      className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs md:text-[13px] font-bold whitespace-nowrap border transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-white text-blue-700 border-blue-100 shadow-sm'
+                          : 'text-slate-600 border-transparent hover:bg-white/80 hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {item.key === 'notice' ? (
+                        noticeConfig.enabled ? (
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" title="팝업 노출 중" />
+                        ) : (
+                          <span className="px-1.5 text-[10px] rounded bg-slate-200 text-slate-500">OFF</span>
+                        )
+                      ) : item.key === 'inquiries' && pendingInquiryCount > 0 ? (
+                        <span className="px-1.5 min-w-[1.25rem] text-center text-[10px] rounded-full bg-red-500 text-white" title="상담 대기">
+                          {pendingInquiryCount}
+                        </span>
+                      ) : typeof item.count === 'number' ? (
+                        <span
+                          className={`px-1.5 min-w-[1.25rem] text-center text-[10px] rounded-full ${
+                            active ? 'bg-blue-50 text-blue-700' : 'bg-slate-200/70 text-slate-500'
+                          }`}
+                        >
+                          {item.count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
+        )}
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('notice')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'notice'
-                    ? 'bg-amber-500 text-slate-950 shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <Megaphone className="w-4 h-4" />
-                <span>개강 공지 팝업 관리</span>
-                {noticeConfig.enabled ? (
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" title="팝업 노출 중" />
-                ) : (
-                  <span className="px-1.5 py-0.5 text-[10px] bg-slate-700 text-slate-400 rounded">OFF</span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('boardNotices')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'boardNotices'
-                    ? 'bg-emerald-500 text-slate-950 shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <Bell className="w-4 h-4" />
-                <span>공지·자격시험 관리 ({boardNotices.length}건)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('popularCourses')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'popularCourses'
-                    ? 'bg-purple-600 text-white shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <Flame className="w-4 h-4 text-amber-400" />
-                <span>실시간 인기강좌 관리 ({popularCourses.length}건)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('courses')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'courses'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <BookOpen className="w-4 h-4" />
-                <span>교육과정 관리 ({courses.length}건)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('errorLogs')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'errorLogs'
-                    ? 'bg-rose-600 text-white shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-                title="방문자 화면에서 발생한 오류를 자동으로 모아 보여줍니다"
-              >
-                <AlertTriangle className="w-4 h-4" />
-                <span>오류 로그 ({errorLogs.length}건)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('materials')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'materials'
-                    ? 'bg-teal-600 text-white shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>자료실 관리</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('students')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'students'
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                <span>수강생 승인 관리</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('accounts')}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-                  activeTab === 'accounts'
-                    ? 'bg-slate-600 text-white shadow-md'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>전체 계정 관리</span>
-              </button>
-            </div>
-
-            {activeTab !== 'materials' && activeTab !== 'students' && activeTab !== 'accounts' && activeTab !== 'courses' && activeTab !== 'errorLogs' && (
-              <button
-                onClick={handleExportToExcel}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow transition-all cursor-pointer whitespace-nowrap ml-auto"
-                title="엑셀파일로 다운로드"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>
-                  {activeTab === 'inquiries' && '수강신청 엑셀 다운로드'}
-                  {activeTab === 'notice' && '팝업공지 엑셀 다운로드'}
-                  {activeTab === 'boardNotices' && '공지사항 엑셀 다운로드'}
-                  {activeTab === 'popularCourses' && '인기강좌 엑셀 다운로드'}
-                </span>
-              </button>
-            )}
-          </div>
-        );
-      })()}
-
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         {/* Modal Body */}
         {authChecking ? (
           <div className="p-12 bg-slate-50 flex-1 flex items-center justify-center text-slate-400 text-sm font-bold">
@@ -2227,6 +2230,41 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                             />
                           </div>
                         </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">분류 글씨 (선택)</label>
+                            <input
+                              type="text"
+                              value={sch.label || ''}
+                              onChange={(e) => handleScheduleChange(idx, 'label', e.target.value)}
+                              placeholder="예: 모집중 · 국비지원"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-xs font-semibold focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">분류 글씨 색</label>
+                            <select
+                              value={sch.labelColor || 'blue'}
+                              onChange={(e) => handleScheduleChange(idx, 'labelColor', e.target.value as ScheduleLabelColor)}
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-xs font-semibold focus:ring-1 focus:ring-blue-600 focus:outline-none cursor-pointer"
+                            >
+                              {SCHEDULE_LABEL_COLOR_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-[10px] font-bold text-slate-500 mb-0.5">한 줄 설명 (선택)</label>
+                            <input
+                              type="text"
+                              value={sch.description || ''}
+                              onChange={(e) => handleScheduleChange(idx, 'description', e.target.value)}
+                              placeholder="예: 교재비 무료 · 최대 100% 정부지원"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white text-xs font-semibold focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                            />
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2242,6 +2280,55 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                       <span>{savingNotice ? '저장 중...' : '개강 과정 수정 사항 저장 & 팝업 즉시 반영'}</span>
                     </button>
                   </div>
+                </div>
+
+                {/* 팝업 크기 · 위치 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl border border-slate-200 bg-slate-50/60">
+                  <div>
+                    <span className="block text-xs font-extrabold text-slate-700 mb-1.5">팝업 크기</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {POPUP_SIZE_OPTIONS.map((opt) => {
+                        const on = (noticeConfig.popupSize || 'medium') === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setNoticeConfig((prev) => ({ ...prev, popupSize: opt.value }))}
+                            aria-pressed={on}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                              on ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="block text-xs font-extrabold text-slate-700 mb-1.5">팝업 위치</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {POPUP_POSITION_OPTIONS.map((opt) => {
+                        const on = (noticeConfig.popupPosition || 'center') === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setNoticeConfig((prev) => ({ ...prev, popupPosition: opt.value }))}
+                            aria-pressed={on}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                              on ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="sm:col-span-2 text-[11px] text-slate-500">
+                    휴대폰처럼 좁은 화면에서는 위치와 상관없이 항상 가운데에 뜹니다. 모서리에 두면 PC에서는 배경이 어두워지지 않아 홈페이지를 보면서 팝업을 함께 볼 수 있어요.
+                  </p>
                 </div>
 
                 <div>
@@ -2286,75 +2373,86 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
               </form>
 
               {/* Right: Live Preview */}
-              <div className="lg:col-span-5 bg-slate-900 p-5 rounded-3xl text-white space-y-4 shadow-xl border border-slate-800 sticky top-4">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <span className="text-xs font-extrabold text-amber-400 flex items-center gap-1.5">
-                    <Eye className="w-4 h-4" />
-                    <span>홈페이지 팝업 실시간 미리보기</span>
+              <div className="lg:col-span-5 bg-slate-100 p-4 sm:p-5 rounded-3xl space-y-4 border border-slate-200 lg:sticky lg:top-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
+                    <Eye className="w-4 h-4 text-blue-600" />
+                    <span>홈페이지 팝업 미리보기</span>
                   </span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    noticeConfig.enabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    noticeConfig.enabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'
                   }`}>
                     {noticeConfig.enabled ? '팝업 노출 ON' : '팝업 비활성 OFF'}
                   </span>
                 </div>
 
-                {/* Mock Card */}
-                <div className="bg-white rounded-2xl overflow-hidden text-slate-900 shadow-2xl border border-slate-200">
-                  <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-4 text-white">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] mb-2">
-                      <Megaphone className="w-3 h-3" />
-                      <span>{noticeConfig.badgeText || '공지사항'}</span>
-                    </span>
-                    <h4 className="font-black text-base leading-snug">{noticeConfig.title || '공지 제목'}</h4>
-                    {noticeConfig.subtitle && (
-                      <p className="text-[11px] text-blue-200 font-medium mt-0.5">{noticeConfig.subtitle}</p>
-                    )}
-                  </div>
-
-                  <div className="p-4 space-y-3">
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 leading-relaxed font-medium whitespace-pre-line">
-                      {noticeConfig.content || '공지 내용 영역'}
-                    </div>
-
-                    {/* Schedule List Preview */}
-                    {noticeConfig.schedules && noticeConfig.schedules.length > 0 ? (
-                      <div className="space-y-1.5">
-                        <p className="text-[11px] font-black text-blue-900 flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                          <span>주요 과목 개강 일정 및 강의시간</span>
-                        </p>
-                        <div className="space-y-1">
-                          {noticeConfig.schedules.map((item, idx) => (
-                            <div key={idx} className="p-2 bg-blue-50 border border-blue-200 rounded-xl text-[11px] flex justify-between items-center">
-                              <span className="font-bold text-slate-900 truncate max-w-[130px]">{item.courseName || '과정명'}</span>
-                              <div className="flex items-center gap-1 text-[10px]">
-                                {item.startDate && <span className="text-blue-800 font-semibold">{item.startDate}</span>}
-                                {item.timeSlot && <span className="text-amber-950 bg-amber-100 px-1 py-0.5 rounded font-bold">{item.timeSlot}</span>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : noticeConfig.dateText ? (
-                      <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 text-xs flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span className="font-bold">{noticeConfig.dateText}</span>
-                      </div>
-                    ) : null}
-
-                    <button
-                      type="button"
-                      className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs rounded-xl shadow flex items-center justify-center gap-1"
+                {/* 화면 속 위치 */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 mb-1.5">PC 화면에서의 위치·크기</p>
+                  <div className={`relative aspect-[16/9] rounded-xl border border-slate-300 overflow-hidden ${
+                    (noticeConfig.popupPosition || 'center') === 'center' ? 'bg-slate-400/60' : 'bg-white'
+                  }`}>
+                    <div className="absolute inset-x-0 top-0 h-[10%] bg-slate-200/80" />
+                    <div
+                      className={`absolute bg-white border-2 border-blue-500 rounded-md shadow ${POSITION_PREVIEW_CLASSES[noticeConfig.popupPosition || 'center']}`}
+                      style={{ width: SIZE_PREVIEW_WIDTH[noticeConfig.popupSize || 'medium'], height: '62%' }}
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>{noticeConfig.actionText || '온라인 수강 신청하기'}</span>
-                    </button>
+                      <div className="m-[8%] h-[6%] w-1/2 rounded-full bg-blue-500" />
+                      <div className="mx-[8%] h-[5%] w-3/4 rounded bg-slate-300" />
+                      <div className="absolute inset-x-[8%] bottom-[8%] h-[10%] rounded bg-slate-800" />
+                    </div>
                   </div>
+                </div>
 
-                  <div className="px-4 py-2 bg-slate-100 border-t border-slate-200 flex justify-between text-[10px] text-slate-500 font-bold">
-                    <span>오늘 하루 동안 보지 않기</span>
-                    <span>닫기</span>
+                {/* 팝업 카드 모양 */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-4 text-slate-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="inline-block bg-gradient-to-r from-blue-600 to-emerald-500 text-white font-bold text-[10px] px-2.5 py-0.5 rounded-full">
+                      {noticeConfig.badgeText || '개강 안내'}
+                    </span>
+                    <X className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <h4 className="font-extrabold text-base leading-snug">{noticeConfig.title || '공지 제목'}</h4>
+                  {noticeConfig.subtitle && <p className="text-[11px] text-slate-500 mt-0.5">{noticeConfig.subtitle}</p>}
+                  {noticeConfig.content && (
+                    <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-line mt-2 line-clamp-3">{noticeConfig.content}</p>
+                  )}
+
+                  {(noticeConfig.schedules || []).filter((i) => i.courseName || i.startDate || i.timeSlot).length > 0 ? (
+                    <div className="space-y-1.5 mt-3">
+                      {(noticeConfig.schedules || [])
+                        .filter((i) => i.courseName || i.startDate || i.timeSlot)
+                        .map((item, idx) => {
+                          const color = SCHEDULE_COLOR_CLASSES[item.labelColor || 'blue'] || SCHEDULE_COLOR_CLASSES.blue;
+                          return (
+                            <div key={idx} className={`p-2.5 rounded-xl border ${color.border} shadow-sm`}>
+                              <div className="flex justify-between items-center gap-2 mb-0.5">
+                                <span className={`text-[10px] font-bold ${color.text}`}>{item.label}</span>
+                                <span className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+                                  {item.startDate && <span className="font-semibold text-blue-700 bg-blue-50 px-1 rounded">{item.startDate}</span>}
+                                  {item.timeSlot && <span>{item.timeSlot}</span>}
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold text-slate-800 truncate">{item.courseName || '과정명'}</p>
+                              {item.description && <p className="text-[10px] text-slate-500 truncate">{item.description}</p>}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  ) : noticeConfig.dateText ? (
+                    <div className="mt-3 p-2.5 rounded-xl border border-blue-100">
+                      <span className="text-[10px] font-bold text-blue-600">개강 일정</span>
+                      <p className="text-xs font-bold text-slate-800">{noticeConfig.dateText}</p>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-3 py-2.5 bg-slate-900 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1">
+                    <span>{noticeConfig.actionText || '온라인 수강신청하기'}</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 mt-1.5 px-0.5">
+                    <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3" />홍천읍 신장대로 48, 2층</span>
+                    <span>033-433-1926</span>
                   </div>
                 </div>
 
@@ -3475,7 +3573,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                   <th className="p-3.5 whitespace-nowrap">접수번호 / 일시</th>
                   <th className="p-3.5 whitespace-nowrap">신청자 성함</th>
                   <th className="p-3.5 whitespace-nowrap">연락처</th>
-                  <th className="p-3.5">관심 강좌</th>
+                  <th className="p-3.5 min-w-[180px]">관심 강좌</th>
                   <th className="p-3.5 whitespace-nowrap">시간대 / 카드 / 구분</th>
                   <th className="p-3.5 min-w-[160px]">추가 문의사항</th>
                   <th className="p-3.5 whitespace-nowrap">진행 상태</th>
@@ -3560,7 +3658,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                       </td>
 
                       {/* Course */}
-                      <td className="p-3.5 text-slate-800 font-bold max-w-xs">
+                      <td className="p-3.5 text-slate-800 font-bold min-w-[180px] max-w-xs break-keep">
                         {item.courseInterest}
                       </td>
 
@@ -3711,6 +3809,8 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
             </button>
           </div>
         </div>
+        </div>
+        </div>
 
         {/* Custom Confirmation Modal for Sandboxed Iframes */}
         {confirmDialog.isOpen && (
@@ -3837,6 +3937,20 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                 </div>
               </form>
             </div>
+          </div>
+        )}
+
+        {/* 오른쪽 아래 모서리 — 끌어서 창 크기 조절 */}
+        {!adminWindow.isFullScreen && (
+          <div
+            onPointerDown={adminWindow.onResizeStart}
+            className="absolute right-0 bottom-0 w-5 h-5 cursor-nwse-resize touch-none z-10 flex items-end justify-end p-1"
+            title="끌어서 창 크기 조절"
+            aria-hidden="true"
+          >
+            <svg viewBox="0 0 10 10" className="w-2.5 h-2.5 text-slate-400">
+              <path d="M9 1L1 9M9 5L5 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
           </div>
         )}
       </div>

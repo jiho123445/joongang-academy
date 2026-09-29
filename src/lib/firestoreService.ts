@@ -18,7 +18,7 @@ import {
 } from "firebase/firestore";
 import { db, auth, storage } from "./firebase";
 import { InquiryRecord, Notice, MaterialItem, Course } from "../types";
-import { ScheduleItem, PopupNoticeConfig } from "../components/NoticePopupModal";
+import { ScheduleItem, PopupNoticeConfig, PopupSize, PopupPosition } from "../components/NoticePopupModal";
 import { PopularCourseAdminItem } from "../components/InquiryAdminModal";
 import { COURSES_DATA } from "../data/coursesData";
 
@@ -310,14 +310,21 @@ export const DEFAULT_OPENING_POPUP: PopupNoticeConfig = {
     "컴퓨터활용능력(1급/2급), 전산세무회계, 정보처리기능사/기사, GTQ/ITQ 자격증, 시니어 어르신 기초반 수강생을 모집합니다! 지금 신청하시고 국민내일배움카드 혜택을 받으세요.",
   dateText: "개강일: 2026년 9월 ~ 10월 수시 개강 (오전/오후/야간반 운영)",
   schedules: [
-    { courseName: "컴퓨터활용능력 (1급 / 2급)", startDate: "9월 08일 개강", timeSlot: "오전 10:00 / 야간 19:00" },
-    { courseName: "전산세무회계 (전산회계1급/세무2급)", startDate: "9월 15일 개강", timeSlot: "오후 14:00 / 야간 19:00" },
-    { courseName: "시니어 어르신 왕초보 컴퓨터&스마트폰", startDate: "9월 10일 개강", timeSlot: "오후 13:30 ~ 15:00" },
-    { courseName: "정보처리기능사 / GTQ 포토샵 자격증", startDate: "10월 01일 개강", timeSlot: "오후 15:30 / 야간 19:00" },
+    { label: "모집중 · 국비지원", labelColor: "blue", courseName: "컴퓨터활용능력 (1급 / 2급)", startDate: "9월 08일 개강", timeSlot: "오전 10:00 / 야간 19:00", description: "교재비 무료 · 최대 100% 정부지원" },
+    { label: "오후반", labelColor: "blue", courseName: "전산세무회계 (전산회계1급/세무2급)", startDate: "9월 15일 개강", timeSlot: "오후 14:00 / 야간 19:00" },
+    { label: "시니어", labelColor: "emerald", courseName: "시니어 어르신 왕초보 컴퓨터&스마트폰", startDate: "9월 10일 개강", timeSlot: "오후 13:30 ~ 15:00", description: "친절한 1:1 눈높이 지도" },
+    { label: "자격증", labelColor: "purple", courseName: "정보처리기능사 / GTQ 포토샵 자격증", startDate: "10월 01일 개강", timeSlot: "오후 15:30 / 야간 19:00" },
   ],
   actionText: "지금 온라인 수강신청하기",
   buttonLabel: "",
+  popupSize: "medium",
+  popupPosition: "center",
 };
+
+const POPUP_SIZES: PopupSize[] = ["small", "medium", "large"];
+const POPUP_POSITIONS: PopupPosition[] = ["center", "top-left", "top-right", "bottom-left", "bottom-right"];
+const isPopupSize = (v: unknown): v is PopupSize => POPUP_SIZES.includes(v as PopupSize);
+const isPopupPosition = (v: unknown): v is PopupPosition => POPUP_POSITIONS.includes(v as PopupPosition);
 
 export function subscribeOpeningPopupFromFirestore(
   onUpdate: (config: PopupNoticeConfig) => void
@@ -339,6 +346,8 @@ export function subscribeOpeningPopupFromFirestore(
           schedules: Array.isArray(data.schedules) ? data.schedules : DEFAULT_OPENING_POPUP.schedules,
           actionText: data.actionText || DEFAULT_OPENING_POPUP.actionText,
           buttonLabel: data.buttonLabel || "",
+          popupSize: isPopupSize(data.popupSize) ? data.popupSize : "medium",
+          popupPosition: isPopupPosition(data.popupPosition) ? data.popupPosition : "center",
         };
         onUpdate(config);
       } else {
@@ -371,6 +380,8 @@ export async function saveOpeningPopupToFirestore(config: PopupNoticeConfig): Pr
       schedules: Array.isArray(config.schedules) ? config.schedules : [],
       actionText: config.actionText || "지금 온라인 수강신청하기",
       buttonLabel: config.buttonLabel || "",
+      popupSize: isPopupSize(config.popupSize) ? config.popupSize : "medium",
+      popupPosition: isPopupPosition(config.popupPosition) ? config.popupPosition : "center",
       updatedAt: serverTimestamp(),
     };
     await setDoc(docRef, payload, { merge: true });
