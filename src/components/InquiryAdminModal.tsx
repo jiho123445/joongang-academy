@@ -1807,6 +1807,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
       className="fixed inset-0 z-50 bg-slate-900/40 animate-fadeIn"
     >
       <div
+        ref={adminWindow.windowRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="admin-window-title"

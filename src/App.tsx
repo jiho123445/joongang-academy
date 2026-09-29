@@ -34,8 +34,33 @@ import { updatePageMeta } from './lib/seo';
 // (수강생 등 일반 방문자는 절대 열지 않는 화면인데도) 즉시 로드하면 모든 방문자가
 // 이 무거운 코드를 다운로드하게 됩니다. React.lazy로 분리해, 원장님이 실제로
 // "관리자 모드" 버튼을 눌렀을 때만 해당 코드가 내려받아지도록 했습니다.
+//
+// (2026-09 추가) 새 버전을 배포하면 파일 이름(해시)이 바뀝니다. 배포 전에 열어둔
+// 탭에서 관리자 모드를 누르면 옛 파일 이름을 찾다가 "Failed to fetch dynamically
+// imported module" 오류가 납니다. 이때 페이지를 한 번만 새로고침해 최신 버전을
+// 받도록 했습니다. (새로고침 후에도 실패하면 무한 새로고침을 막기 위해 오류를 그대로 표시)
+const CHUNK_RELOAD_KEY = 'chunk_reload_at';
+const lazyWithReload = <T,>(factory: () => Promise<T>) =>
+  factory().then(
+    (mod) => {
+      sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+      return mod;
+    },
+    (err) => {
+      const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
+      if (Date.now() - last > 60_000) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+        window.location.reload();
+        return new Promise<T>(() => {}); // 새로고침될 때까지 대기
+      }
+      throw err;
+    }
+  );
+
 const InquiryAdminModal = lazy(() =>
-  import('./components/InquiryAdminModal').then((mod) => ({ default: mod.InquiryAdminModal }))
+  lazyWithReload(() => import('./components/InquiryAdminModal')).then((mod) => ({
+    default: mod.InquiryAdminModal,
+  }))
 );
 
 export default function App() {

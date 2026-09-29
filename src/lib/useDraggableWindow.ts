@@ -97,18 +97,36 @@ export function useDraggableWindow({
     return () => window.removeEventListener('resize', onResize);
   }, [minWidth, minHeight]);
 
+  // 창 DOM을 직접 가리키는 ref. 끄는 동안에는 React 상태를 바꾸지 않고
+  // 이 요소의 style만 바꿔서, 3천 줄이 넘는 관리자 화면 전체가 매번 다시
+  // 그려지지 않게 합니다 (이동이 느리던 원인). 손을 떼는 순간에만 상태에 반영.
+  const windowRef = useRef<HTMLDivElement | null>(null);
+
   const startInteraction = useCallback(
     (e: ReactPointerEvent, mode: 'move' | 'resize') => {
       if (isMobile || isMaximized) return;
       if (e.button !== 0) return;
       if (mode === 'move' && (e.target as HTMLElement).closest('button, a, input, select, textarea')) return;
+      const el = windowRef.current;
+      if (!el) return;
       e.preventDefault();
 
       const startX = e.clientX;
       const startY = e.clientY;
       const start = rectRef.current;
+      let latest = start;
+      let frame = 0;
       const prevUserSelect = document.body.style.userSelect;
       document.body.style.userSelect = 'none';
+      el.style.willChange = mode === 'move' ? 'left, top' : 'width, height';
+
+      const apply = () => {
+        frame = 0;
+        el.style.left = `${latest.x}px`;
+        el.style.top = `${latest.y}px`;
+        el.style.width = `${latest.w}px`;
+        el.style.height = `${latest.h}px`;
+      };
 
       const onMove = (ev: PointerEvent) => {
         const dx = ev.clientX - startX;
@@ -117,16 +135,24 @@ export function useDraggableWindow({
           mode === 'move'
             ? { ...start, x: start.x + dx, y: start.y + dy }
             : { ...start, w: Math.max(minWidth, start.w + dx), h: Math.max(minHeight, start.h + dy) };
-        setRect(clampRect(next, minWidth, minHeight));
+        latest = clampRect(next, minWidth, minHeight);
+        if (!frame) frame = requestAnimationFrame(apply); // 화면 새로고침 주기에 맞춰 한 번만
       };
       const onUp = () => {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        if (frame) cancelAnimationFrame(frame);
+        apply();
+        el.style.willChange = '';
         document.body.style.userSelect = prevUserSelect;
-        save(rectRef.current);
+        rectRef.current = latest;
+        setRect(latest);
+        save(latest);
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     },
     [isMobile, isMaximized, minWidth, minHeight, save]
   );
@@ -146,6 +172,7 @@ export function useDraggableWindow({
     : { left: rect.x, top: rect.y, width: rect.w, height: rect.h };
 
   return {
+    windowRef,
     style,
     isMobile,
     isMaximized,
