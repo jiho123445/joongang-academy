@@ -1885,7 +1885,7 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
           >
             {adminMenuGroups.map((group) => (
               <div key={group.title} className="flex md:flex-col gap-1 md:mb-2 shrink-0">
-                <p className="hidden md:block px-2.5 pt-2 pb-1 text-[11px] font-bold text-slate-400">{group.title}</p>
+                <p className="hidden md:block px-2.5 pt-2 pb-1 text-[13px] font-extrabold tracking-[-0.01em] text-slate-500">{group.title}</p>
                 {group.items.map((item) => {
                   const active = activeTab === item.key;
                   const Icon = item.icon;
@@ -1896,13 +1896,13 @@ export const InquiryAdminModal: React.FC<InquiryAdminModalProps> = ({
                       onClick={() => setActiveTab(item.key)}
                       title={item.hint}
                       aria-current={active ? 'page' : undefined}
-                      className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs md:text-[13px] font-bold whitespace-nowrap border transition-colors cursor-pointer ${
+                      className={`flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm md:text-[15px] font-extrabold tracking-[-0.01em] whitespace-nowrap border transition-colors cursor-pointer ${
                         active
                           ? 'bg-white text-blue-700 border-blue-100 shadow-sm'
-                          : 'text-slate-600 border-transparent hover:bg-white/80 hover:text-slate-900'
+                          : 'text-slate-700 border-transparent hover:bg-white/80 hover:text-slate-950'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <Icon className={`w-[18px] h-[18px] shrink-0 ${active ? 'text-blue-600' : 'text-slate-500'}`} />
                       <span className="flex-1 text-left">{item.label}</span>
                       {item.key === 'notice' ? (
                         noticeConfig.enabled ? (
