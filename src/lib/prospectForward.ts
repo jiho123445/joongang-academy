@@ -9,15 +9,22 @@
  *   국비 시스템(class-apply)의 예비 수강생 상담으로 보냅니다. 학원관리시스템으로 이전이 끝나면 이 예비 경로는 지웁니다.
  * - 전달 실패는 방문자 화면에 오류로 보이지 않습니다(홈페이지 저장이 성공했다면 접수는 정상).
  *   단, 홈페이지 저장이 실패했을 때는 이 전달이 성공하면 접수된 것으로 안내합니다.
+ * - 학원관리시스템 API 키는 Vercel 환경변수 VITE_ACADEMY_ADMIN_API_KEY 에 넣습니다(코드에 적지 않음).
  * - 주소를 바꾸려면 Vercel 환경변수 VITE_INQUIRY_INBOX_URL / VITE_PROSPECT_INQUIRY_URL 을 넣습니다.
  */
 import type { ConsultationForm } from '../types';
 
-/** 학원관리시스템(academy-admin-3676f) 공개 웹 API 키 — 브라우저용 공개 값이며 접근은 Firestore 규칙으로 제한됩니다. */
-const ACADEMY_ADMIN_API_KEY = 'AIzaSyDm9u8U6AvRw3LeHdb7mHmcDe2MNgmyVaY';
+/**
+ * 학원관리시스템(academy-admin-3676f) 웹 API 키 — 코드에 직접 적지 않고 Vercel 환경변수
+ * VITE_ACADEMY_ADMIN_API_KEY 에서 읽습니다. (GitHub 비밀 검사 경고 대응, 2026-10)
+ * 키가 없으면 받은 편지함 전송을 건너뛰고 바로 예비 경로(국비 시스템)로 보냅니다.
+ */
+const ACADEMY_ADMIN_API_KEY: string = (import.meta as any).env?.VITE_ACADEMY_ADMIN_API_KEY || '';
 export const INQUIRY_INBOX_URL: string =
   (import.meta as any).env?.VITE_INQUIRY_INBOX_URL ||
-  `https://firestore.googleapis.com/v1/projects/academy-admin-3676f/databases/(default)/documents/inquiryInbox?key=${ACADEMY_ADMIN_API_KEY}`;
+  (ACADEMY_ADMIN_API_KEY
+    ? `https://firestore.googleapis.com/v1/projects/academy-admin-3676f/databases/(default)/documents/inquiryInbox?key=${ACADEMY_ADMIN_API_KEY}`
+    : '');
 
 export const PROSPECT_INQUIRY_URL: string =
   (import.meta as any).env?.VITE_PROSPECT_INQUIRY_URL || 'https://class-apply.vercel.app/api/prospect-inquiry';
@@ -107,6 +114,6 @@ async function postJson(url: string, body: unknown, ms = 6000): Promise<boolean>
 
 /** 성공하면 true. 학원관리시스템 → (실패 시) 국비 시스템 순서로 보냅니다. 예외를 던지지 않습니다. */
 export async function forwardInquiryToConsultApp(form: ConsultationForm, receiptNumber?: string): Promise<boolean> {
-  if (await postJson(INQUIRY_INBOX_URL, buildInboxDocument(form, receiptNumber))) return true;
+  if (INQUIRY_INBOX_URL && await postJson(INQUIRY_INBOX_URL, buildInboxDocument(form, receiptNumber))) return true;
   return postJson(PROSPECT_INQUIRY_URL, buildProspectInquiryPayload(form, receiptNumber));
 }
