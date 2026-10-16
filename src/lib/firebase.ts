@@ -4,8 +4,10 @@ import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 
+// 웹 API 키는 코드에 적지 않고 Vercel 환경변수 VITE_FIREBASE_API_KEY 에서 읽습니다.
+// (GitHub 비밀 검사 경고 대응, 2026-10 — 로컬 개발 시에는 .env.local 에 같은 이름으로 넣습니다.)
 const firebaseConfig = {
-  apiKey: "AIzaSyCoOTPMuFwHfjImBNm_5oeDUc19L95QrT8",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string,
   authDomain: "joongang-homepage.firebaseapp.com",
   projectId: "joongang-homepage",
   storageBucket: "joongang-homepage.firebasestorage.app",
