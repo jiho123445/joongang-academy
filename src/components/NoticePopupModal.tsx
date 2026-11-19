@@ -66,6 +66,10 @@ interface NoticePopupModalProps {
   onClose: () => void;
   onActionClick: () => void;
   onHideToday: () => void;
+  /** PC에서 이 팝업 옆에 같은 크기로 나란히 띄울 다른 팝업 카드 (예: 겨울방학 특강). 팝업 위치가 '가운데'일 때만 사용 */
+  companion?: React.ReactNode;
+  /** 바깥 어두운 배경을 눌렀을 때 동작 (지정하지 않으면 onClose) */
+  onBackdropClick?: () => void;
 }
 
 // 홈 화면 "실시간 인기 수강 강좌" 카드와 같은 색 규칙
@@ -97,6 +101,8 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
   onClose,
   onActionClick,
   onHideToday,
+  companion,
+  onBackdropClick,
 }) => {
   const shouldShow = isOpen && !!noticeConfig && noticeConfig.enabled;
   const panelRef = useModalA11y(shouldShow, onClose);
@@ -106,6 +112,7 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
   const size = SIZE_CLASSES[noticeConfig.popupSize || 'medium'] || SIZE_CLASSES.medium;
   const position: PopupPosition = noticeConfig.popupPosition || 'center';
   const isCorner = position !== 'center';
+  const withCompanion = !!companion && !isCorner;
 
   const schedules = (noticeConfig.schedules || []).filter(
     (item) => item.courseName || item.startDate || item.timeSlot
@@ -117,11 +124,28 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
         // 모서리 위치일 때 PC에서는 배경을 어둡게 하지 않고 홈페이지를 그대로 쓸 수 있게 함
         isCorner ? 'sm:bg-transparent sm:pointer-events-none' : 'backdrop-blur-[2px]'
       } ${POSITION_CLASSES[position]}`}
-      onClick={onClose}
+      onClick={onBackdropClick || onClose}
     >
+      {withCompanion ? (
+        <div
+          ref={panelRef}
+          className="flex items-stretch justify-center gap-6 w-full"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={`flex w-full max-w-[25rem] ${size.width}`}>{companion}</div>
+          {renderCard(false)}
+        </div>
+      ) : (
+        renderCard(true)
+      )}
+    </div>
+  );
+
+  function renderCard(attachRef: boolean) {
+    return (
       <div
         id="notice-popup-card"
-        ref={panelRef}
+        ref={attachRef ? panelRef : undefined}
         role="dialog"
         aria-modal={isCorner ? undefined : true}
         aria-labelledby="notice-popup-title"
@@ -237,6 +261,6 @@ export const NoticePopupModal: React.FC<NoticePopupModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 };

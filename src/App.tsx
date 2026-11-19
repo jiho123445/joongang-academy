@@ -12,6 +12,13 @@ import { NoticeBoard } from './components/NoticeBoard';
 import { FaqSection } from './components/FaqSection';
 import { InquirySection } from './components/InquirySection';
 import { NoticePopupModal, PopupNoticeConfig } from './components/NoticePopupModal';
+import {
+  WinterSpecialCard,
+  WinterSpecialPopup,
+  isWinterPopupActive,
+  isWinterPopupHiddenToday,
+  hideWinterPopupToday,
+} from './components/WinterSpecialPopup';
 import { LocationSection } from './components/LocationSection';
 import { MaterialsSection } from './components/MaterialsSection';
 import { StudentAuthGate } from './components/StudentAuthGate';
@@ -80,6 +87,31 @@ export default function App() {
   // Opening Notice Popup State
   const [noticeConfig, setNoticeConfig] = useState<PopupNoticeConfig | null>(DEFAULT_OPENING_POPUP);
   const [isNoticePopupOpen, setIsNoticePopupOpen] = useState<boolean>(false);
+  // 기존 팝업 설정을 Firestore에서 한 번이라도 받아왔는지 (받기 전에 겨울특강 팝업이 혼자 먼저 떴다가 옆으로 옮겨가는 깜빡임 방지)
+  const [isNoticeConfigLoaded, setIsNoticeConfigLoaded] = useState<boolean>(false);
+
+  // 2027 겨울방학 특강 팝업 — 기존 팝업과 별개 (하루 보지 않기도 따로 저장, 2027-01-10까지만 표시)
+  const [isWinterPopupOpen, setIsWinterPopupOpen] = useState<boolean>(
+    () => isWinterPopupActive() && !isWinterPopupHiddenToday()
+  );
+  // 넓은 화면(PC)에서만 두 팝업을 나란히 표시
+  const [isWideScreen, setIsWideScreen] = useState<boolean>(() =>
+    typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(min-width: 1024px)').matches
+      : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const onChange = () => setIsWideScreen(mq.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+  useEffect(() => {
+    // Firestore 응답이 늦어도 3초 뒤에는 겨울특강 팝업이 뜨도록 함
+    const t = window.setTimeout(() => setIsNoticeConfigLoaded(true), 3000);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // "오늘 하루 동안 보지 않기"를 눌렀는지 확인합니다. 최초 접속 시뿐 아니라,
   // 로고/홈 버튼을 눌러 홈으로 돌아올 때도 이 값을 반드시 확인해야
@@ -139,6 +171,7 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribeOpeningPopupFromFirestore((cfg) => {
       setNoticeConfig(cfg);
+      setIsNoticeConfigLoaded(true);
 
       // "오늘 하루 동안 보지 않기"를 누른 경우, 카카오톡/외부 유입 등
       // 어떤 경로로 들어와도 오늘 하루는 절대 다시 뜨지 않아야 합니다.
@@ -622,16 +655,55 @@ export default function App() {
         onNavigateToInquiry={() => handleNavigate('inquiry')}
       />
 
-      {/* Opening Notice Popup Modal */}
+      {/* Opening Notice Popup Modal (PC에서는 겨울방학 특강 팝업이 같은 크기로 나란히 표시됨) */}
       <NoticePopupModal
         noticeConfig={noticeConfig}
         isOpen={isNoticePopupOpen}
         onClose={() => setIsNoticePopupOpen(false)}
         onActionClick={() => {
           setIsNoticePopupOpen(false);
+          setIsWinterPopupOpen(false);
           handleNavigate('inquiry');
         }}
         onHideToday={handleHideToday}
+        onBackdropClick={() => {
+          setIsNoticePopupOpen(false);
+          setIsWinterPopupOpen(false);
+        }}
+        companion={
+          isWinterPopupOpen && isWideScreen ? (
+            <WinterSpecialCard
+              onClose={() => setIsWinterPopupOpen(false)}
+              onHideToday={() => {
+                hideWinterPopupToday();
+                setIsWinterPopupOpen(false);
+              }}
+              onActionClick={() => {
+                setIsWinterPopupOpen(false);
+                setIsNoticePopupOpen(false);
+                handleNavigate('inquiry');
+              }}
+            />
+          ) : undefined
+        }
+      />
+
+      {/* 2027 겨울방학 특강 팝업 (단독) — 휴대폰이거나 기존 팝업이 닫혀 있을 때 */}
+      <WinterSpecialPopup
+        isOpen={
+          isWinterPopupOpen &&
+          isNoticeConfigLoaded &&
+          !(isNoticePopupOpen && !!noticeConfig && noticeConfig.enabled)
+        }
+        onClose={() => setIsWinterPopupOpen(false)}
+        onHideToday={() => {
+          hideWinterPopupToday();
+          setIsWinterPopupOpen(false);
+        }}
+        onActionClick={() => {
+          setIsWinterPopupOpen(false);
+          handleNavigate('inquiry');
+        }}
       />
 
       {/* Admin Inquiry Data Management & Notice Modal */}
