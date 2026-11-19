@@ -208,7 +208,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
               </div>
 
               <h2 className="text-xl font-extrabold text-slate-800 mb-1">
-                2026년 하반기 모집 일정
+                12월 · 겨울방학 모집 일정
               </h2>
               <p className="text-xs text-slate-500 mb-5">
                 국비지원 혜택 및 인기 자격증 과정을 빠르게 상담받으세요.
