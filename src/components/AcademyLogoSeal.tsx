@@ -11,15 +11,10 @@ export const AcademyLogoSeal: React.FC<AcademyLogoSealProps> = ({
   return (
     <div className={`relative shrink-0 flex items-center justify-center ${className}`}>
       <img
-        src="/seal_logo.svg"
-        alt="홍천 중앙정보처리학원 심볼"
-        className="w-full h-full object-contain"
+        src="/academy-logo.png"
+        alt="홍천 중앙정보처리학원 로고"
+        className="w-full h-full object-contain rounded-full bg-white"
         referrerPolicy="no-referrer"
-        onError={(e) => {
-          if (!e.currentTarget.src.endsWith('.png')) {
-            e.currentTarget.src = '/seal_logo.png';
-          }
-        }}
       />
     </div>
   );
